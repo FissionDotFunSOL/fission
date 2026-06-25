@@ -1,64 +1,65 @@
 /* ═══════════════════════════════════════════════════════════
-   FISSION PROTOCOL — Design Tokens
+   FISSION PROTOCOL — Design Tokens v2
    
-   Palette: Deep indigo base + electric amber accent
-   Differentiates from alt.fun's teal/mint scheme
+   Aesthetic: Cyberpunk Brutalist
+   Background: Pure black
+   Accent: Nuclear green / Electric cyan
+   Typography: Space Grotesk + JetBrains Mono
    ═══════════════════════════════════════════════════════════ */
 
 :root {
-  /* ── Backgrounds (deep indigo-black) ── */
-  --bg: #08080F;
-  --bg-card: #0E0E18;
-  --bg-elevated: #141422;
-  --bg-input: #0B0B14;
-  --bg-surface: #111120;
+  /* ── Backgrounds ── */
+  --bg: #000000;
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-elevated: rgba(255, 255, 255, 0.04);
+  --bg-input: rgba(255, 255, 255, 0.03);
+  --bg-surface: rgba(255, 255, 255, 0.015);
 
-  /* ── Accent (electric amber / gold) ── */
-  --accent-primary: #D4A24E;
-  --accent-secondary: #E8C468;
-  --accent-dim: #A07A38;
-  --accent-bright: #F0D78A;
+  /* ── Accent ── */
+  --accent: #00ff88;
+  --accent-dim: #00cc6a;
+  --accent-bright: #33ffaa;
+  --accent-glow: rgba(0, 255, 136, 0.15);
+  --accent-secondary: #00d4ff;
 
   /* ── Semantic ── */
-  --red: #E05252;
-  --green: #4ADE80;
-  --yellow: #FACC15;
-  --orange: #F97316;
+  --red: #ff3333;
+  --green: #00ff88;
+  --yellow: #ffcc00;
 
   /* ── Text ── */
-  --text-primary: #C8C8D8;
-  --text-muted: #6E6E8A;
-  --text-bright: #EDEDF4;
-  --text-dim: #44445A;
+  --text: #ffffff;
+  --text-secondary: rgba(255, 255, 255, 0.5);
+  --text-tertiary: rgba(255, 255, 255, 0.25);
+  --text-accent: var(--accent);
 
   /* ── Borders ── */
-  --border: rgba(212, 162, 78, 0.10);
-  --border-strong: rgba(212, 162, 78, 0.22);
-  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border: rgba(255, 255, 255, 0.06);
+  --border-accent: rgba(0, 255, 136, 0.2);
+  --border-strong: rgba(255, 255, 255, 0.12);
 
   /* ── Typography ── */
-  --font-heading: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Space Grotesk', -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --font-body: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: 'Space Grotesk', -apple-system, sans-serif;
 
   /* ── Sizing ── */
-  --header-height: 56px;
-  --max-width: 1280px;
-  --section-pad: clamp(60px, 10vh, 120px);
-  --card-radius: 8px;
-  --radius-sm: 4px;
-  --radius-lg: 16px;
+  --header-height: 60px;
+  --max-width: 1400px;
+  --section-pad: clamp(80px, 12vh, 160px);
+  --radius: 2px;
 
-  /* ── Transitions ── */
-  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* ── Motion ── */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --duration-fast: 150ms;
-  --duration-normal: 300ms;
-  --duration-slow: 600ms;
+  --speed-fast: 120ms;
+  --speed: 300ms;
+  --speed-slow: 800ms;
 
   /* ── Z-layers ── */
-  --z-canvas: 1;
+  --z-bg: 0;
   --z-content: 10;
   --z-header: 100;
-  --z-overlay: 500;
+  --z-modal: 500;
+  --z-toast: 1000;
 }
