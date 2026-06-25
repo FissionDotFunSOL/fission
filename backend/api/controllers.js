@@ -1,6 +1,7 @@
 import * as db from '../db/firebase.js';
 import { verifySharingConfig } from '../services/pumpfun.js';
 import { getWorkerHealth } from '../workers/scheduler.js';
+import config from '../config.js';
 import logger from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -106,17 +107,29 @@ export async function registerToken(req, res) {
       });
     }
 
+    // ── Resolve Drift market index from underlying ──
+    const underlyingSymbol = underlying?.trim()?.toUpperCase() || null;
+    const driftMarketIndex = underlyingSymbol
+      ? (config.DRIFT_MARKET_INDICES[underlyingSymbol] ?? null)
+      : null;
+
     // ── Store token ──
     const tokenData = {
       mint: trimmedMint,
-      underlying: underlying?.trim() || null,
+      underlying: underlyingSymbol,
+      driftMarketIndex,
       sharingConfigPDA: verification.pda,
       createdAt: Date.now(),
       status: 'active',
     };
 
     await db.setToken(trimmedMint, tokenData);
-    logger.info('Token registered', { mint: trimmedMint, pda: verification.pda });
+    logger.info('Token registered', {
+      mint: trimmedMint,
+      underlying: underlyingSymbol,
+      driftMarketIndex,
+      pda: verification.pda,
+    });
 
     res.status(201).json({ token: tokenData });
   } catch (err) {
@@ -245,4 +258,15 @@ export async function getSystemStatus(_req, res) {
     logger.error('getSystemStatus error', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch system status' });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Markets — list available Drift perp markets for the frontend
+// ---------------------------------------------------------------------------
+export async function listMarkets(_req, res) {
+  const markets = Object.entries(config.DRIFT_MARKET_INDICES).map(([symbol, index]) => ({
+    symbol,
+    marketIndex: index,
+  }));
+  res.json({ markets });
 }

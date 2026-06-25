@@ -38,9 +38,15 @@ const FEE_SPLIT = {
 // Risk management
 // ---------------------------------------------------------------------------
 const RISK = {
-  maxDrawdownPct:       0.40,  // 40 % → auto-reduce position
-  circuitBreakerPct:    0.50,  // 50 % underlying drop in 24 h → auto-close
-  reservePct:           0.20,  // keep 20 % of position fund as cash buffer
+  maxDrawdownPct:       parseFloat(process.env.MAX_DRAWDOWN_PCT) || 0.40,
+  circuitBreakerPct:    parseFloat(process.env.CIRCUIT_BREAKER_PCT) || 0.50,
+  reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.20,
+  takeProfitPct:        parseFloat(process.env.TAKE_PROFIT_PCT) || 0.30,
+  takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.25,
+  drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.50,
+  minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.01,
+  maxPositionSol:       parseFloat(process.env.MAX_POSITION_SOL) || 100,
+  liquidationWarningPct: parseFloat(process.env.LIQUIDATION_WARNING_PCT) || 0.15,
 };
 
 // ---------------------------------------------------------------------------
@@ -70,19 +76,33 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT || '';
 
 // ---------------------------------------------------------------------------
-// Drift perp market indices
+// Drift perp market indices (mainnet-beta)
+// Full list: https://app.drift.trade
 // ---------------------------------------------------------------------------
 const DRIFT_MARKET_INDICES = {
-  'SOL': 0,
-  'BTC': 1,
-  'ETH': 2,
-  'JTO': 20,
-  'BONK': 22,
-  'PYTH': 23,
-  'WIF': 24,
-  'RNDR': 25,
-  'HNT': 27,
-  'JUP': 28,
+  'SOL':    0,
+  'BTC':    1,
+  'ETH':    2,
+  'APT':    9,
+  'MATIC':  10,
+  'ARB':    12,
+  'DOGE':   15,
+  'BNB':    16,
+  'SUI':    17,
+  'PEPE':   18,
+  'JTO':    20,
+  'BONK':   22,
+  'PYTH':   23,
+  'WIF':    24,
+  'RNDR':   25,
+  'W':      26,
+  'HNT':    27,
+  'JUP':    28,
+  'TNSR':   29,
+  'MEW':    32,
+  'POPCAT': 36,
+  'CLOUD':  38,
+  'RENDER': 25,
 };
 
 // ---------------------------------------------------------------------------

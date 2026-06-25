@@ -66,6 +66,36 @@ const server = app.listen(config.PORT, () => {
     port: config.PORT,
   });
 
+  // ── Startup diagnostics ──
+  const diag = {
+    keypair: config.protocolKeypair ? 'LOADED' : 'MISSING — workers cannot sign transactions',
+    publicKey: config.PROTOCOL_PUBKEY?.toBase58() || 'MISSING',
+    rpc: config.SOLANA_RPC_URL.includes('mainnet-beta.solana.com') ? 'PUBLIC (rate-limited)' : 'CUSTOM',
+    rpcUrl: config.SOLANA_RPC_URL,
+    firebase: config.FIREBASE_SERVICE_ACCOUNT ? 'CONFIGURED' : 'MOCK MODE (in-memory)',
+    drift: config.DRIFT_ENV,
+    jupiter: config.JUPITER_API_URL,
+    markets: Object.keys(config.DRIFT_MARKET_INDICES).length + ' perp markets',
+  };
+
+  logger.info('Startup diagnostics', diag);
+
+  if (!config.protocolKeypair) {
+    logger.warn('=== PROTOCOL_KEYPAIR not set ===');
+    logger.warn('Workers will start but ALL on-chain operations will fail.');
+    logger.warn('Set PROTOCOL_KEYPAIR in backend/.env to enable transaction signing.');
+  }
+
+  if (!config.FIREBASE_SERVICE_ACCOUNT) {
+    logger.warn('=== FIREBASE not configured ===');
+    logger.warn('Running in mock mode — data will be lost on restart.');
+  }
+
+  if (config.SOLANA_RPC_URL.includes('mainnet-beta.solana.com')) {
+    logger.warn('=== Using public RPC ===');
+    logger.warn('This will be rate-limited. Use Helius, QuickNode, or Triton for production.');
+  }
+
   // Start background workers
   startScheduler();
 });

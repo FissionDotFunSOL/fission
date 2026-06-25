@@ -9,14 +9,26 @@
 export const PROTOCOL_WALLET = 'HgeoK9ASUYey5g2MBSGHfCdauDzLv93x6vAs7j492i9c';
 
 export const POPULAR_TOKENS = [
-  { symbol: 'SOL',   name: 'Solana' },
-  { symbol: 'BONK',  name: 'Bonk' },
-  { symbol: 'WIF',   name: 'dogwifhat' },
-  { symbol: 'JUP',   name: 'Jupiter' },
-  { symbol: 'PYTH',  name: 'Pyth Network' },
-  { symbol: 'JTO',   name: 'Jito' },
-  { symbol: 'RNDR',  name: 'Render' },
-  { symbol: 'HNT',   name: 'Helium' },
+  { symbol: 'SOL',    name: 'Solana' },
+  { symbol: 'BTC',    name: 'Bitcoin' },
+  { symbol: 'ETH',    name: 'Ethereum' },
+  { symbol: 'BONK',   name: 'Bonk' },
+  { symbol: 'WIF',    name: 'dogwifhat' },
+  { symbol: 'JUP',    name: 'Jupiter' },
+  { symbol: 'PYTH',   name: 'Pyth Network' },
+  { symbol: 'JTO',    name: 'Jito' },
+  { symbol: 'RNDR',   name: 'Render' },
+  { symbol: 'HNT',    name: 'Helium' },
+  { symbol: 'DOGE',   name: 'Dogecoin' },
+  { symbol: 'SUI',    name: 'Sui' },
+  { symbol: 'PEPE',   name: 'Pepe' },
+  { symbol: 'W',      name: 'Wormhole' },
+  { symbol: 'TNSR',   name: 'Tensor' },
+  { symbol: 'MEW',    name: 'cat in a dogs world' },
+  { symbol: 'POPCAT', name: 'Popcat' },
+  { symbol: 'APT',    name: 'Aptos' },
+  { symbol: 'ARB',    name: 'Arbitrum' },
+  { symbol: 'BNB',    name: 'BNB' },
 ];
 
 // Dashboard demo data — only shown when backend is offline.
