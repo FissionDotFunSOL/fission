@@ -1,0 +1,29 @@
+{
+  "name": "fission-backend",
+  "version": "1.0.0",
+  "description": "Fission Protocol backend worker service — fee claiming, position management, buyback/burn on Solana",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@drift-labs/sdk": "^2.107.0",
+    "@jup-ag/api": "^6.0.36",
+    "@pump-fun/pump-sdk": "^1.0.0",
+    "@solana/spl-token": "^0.4.12",
+    "@solana/web3.js": "^1.98.0",
+    "bs58": "^6.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^8.5.2",
+    "firebase-admin": "^13.0.3",
+    "node-cron": "^3.0.3",
+    "winston": "^3.17.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

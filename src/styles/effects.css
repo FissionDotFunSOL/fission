@@ -1,0 +1,28 @@
+/* ═══════════════════════════════════════════════════════════
+   FISSION PROTOCOL — Visual Effects (Minimal)
+   Only clean, professional effects remain.
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Clean Card ── */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--card-radius);
+  position: relative;
+  overflow: hidden;
+  transition: border-color var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out);
+}
+
+.glass-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+/* ── Horizontal Rule ── */
+.cyber-hr {
+  border: none;
+  height: 1px;
+  background: var(--border);
+  margin: 2rem 0;
+}

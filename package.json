@@ -1,0 +1,17 @@
+{
+  "name": "fission-protocol",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:backend": "cd backend && node --watch server.js",
+    "dev:all": "concurrently -n frontend,backend -c cyan,magenta \"npm run dev\" \"npm run dev:backend\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "vite": "^6.3.0"
+  }
+}

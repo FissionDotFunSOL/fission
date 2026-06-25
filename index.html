@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fission Protocol — Perpetual-Backed Token Derivatives on Solana</title>
+  <meta name="description" content="Launch derivative tokens backed by perpetual positions on Solana. Creator fees fuel automated trading. No vaults. No deposits." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/styles/variables.css" />
+  <link rel="stylesheet" href="/src/styles/reset.css" />
+  <link rel="stylesheet" href="/src/styles/effects.css" />
+  <link rel="stylesheet" href="/src/styles/animations.css" />
+  <link rel="stylesheet" href="/src/styles/components.css" />
+  <link rel="stylesheet" href="/src/styles/layout.css" />
+  <script type="module" src="/src/main.js"></script>
+</head>
+
+<body>
+
+  <!-- TICKER BAR -->
+  <div class="ticker-bar" id="ticker-bar"></div>
+
+  <!-- TOKEN DETAIL MODAL -->
+  <div class="modal-overlay" id="token-modal" hidden>
+    <div class="modal-panel glass-card">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-title">Token Details</h3>
+        <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-stats-grid">
+          <div class="modal-stat">
+            <div class="modal-stat-label">Underlying</div>
+            <div class="modal-stat-value" id="modal-underlying">--</div>
+          </div>
+          <div class="modal-stat">
+            <div class="modal-stat-label">24h Volume</div>
+            <div class="modal-stat-value" id="modal-volume">--</div>
+          </div>
+          <div class="modal-stat">
+            <div class="modal-stat-label">Fees Claimed</div>
+            <div class="modal-stat-value" id="modal-fees">--</div>
+          </div>
+          <div class="modal-stat">
+            <div class="modal-stat-label">Position Size</div>
+            <div class="modal-stat-value" id="modal-position">--</div>
+          </div>
+          <div class="modal-stat">
+            <div class="modal-stat-label">PnL</div>
+            <div class="modal-stat-value" id="modal-pnl">--</div>
+          </div>
+          <div class="modal-stat">
+            <div class="modal-stat-label">Buybacks</div>
+            <div class="modal-stat-value" id="modal-buybacks">--</div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <h4>Fee Split</h4>
+          <div class="modal-fee-bar">
+            <div class="fee-segment fee-segment-position" style="width:60%">60% Position</div>
+            <div class="fee-segment fee-segment-buyback" style="width:20%">20% Buyback</div>
+            <div class="fee-segment fee-segment-revenue" style="width:10%">10%</div>
+            <div class="fee-segment fee-segment-ecosystem" style="width:10%">10%</div>
+          </div>
+        </div>
+        <div class="modal-section">
+          <h4>Engine Status</h4>
+          <div class="modal-engine-status">
+            <span class="status-dot status-active"></span>
+            <span id="modal-engine-text">All workers running autonomously</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HEADER -->
+  <header class="site-header" id="site-header">
+    <div class="header-inner">
+      <a href="#hero" class="header-logo">FISSION</a>
+
+      <nav class="header-nav" id="header-nav">
+        <a href="#how-it-works" class="nav-link">How It Works</a>
+        <a href="#dashboard" class="nav-link">Dashboard</a>
+        <a href="#launch" class="nav-link">Launch</a>
+        <a href="#stats" class="nav-link">Stats</a>
+      </nav>
+
+      <a href="#launch" class="btn btn-primary btn-sm header-cta">LAUNCH</a>
+
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+        <span class="hamburger-line"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <canvas id="particle-canvas" aria-hidden="true"></canvas>
+
+    <div class="hero-content">
+      <h1 class="hero-logo">FISSION</h1>
+      <p class="hero-tagline" id="hero-tagline"></p>
+      <p class="hero-description">
+        Creator fees fuel the engine. No vaults. No deposits. Just memecoins backed by perpetual positions.
+      </p>
+      <div class="hero-ctas">
+        <a href="#launch" class="btn btn-primary">LAUNCH TOKEN</a>
+        <a href="#dashboard" class="btn btn-outline">EXPLORE</a>
+      </div>
+    </div>
+
+    <div class="scroll-indicator scroll-arrow">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <polyline points="6 9 12 15 18 9" />
+      </svg>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Protocol</span>
+        <h2 class="section-title">How It Works</h2>
+        <p class="section-subtitle">
+          Three steps from launch to automated perpetual-backed returns.
+        </p>
+      </div>
+
+      <div class="steps-grid stagger-children">
+        <div class="step-card glass-card reveal">
+          <span class="step-number">Step 01</span>
+          <div class="step-icon">01</div>
+          <h3 class="step-title">Launch on Pump.fun</h3>
+          <p class="step-desc">
+            Deploy your token with 100% creator fee share allocated to the Fission Protocol wallet. Admin must be revoked.
+          </p>
+        </div>
+
+        <div class="flow-connector reveal">&rarr;</div>
+
+        <div class="step-card glass-card reveal">
+          <span class="step-number">Step 02</span>
+          <div class="step-icon">02</div>
+          <h3 class="step-title">Register with Fission</h3>
+          <p class="step-desc">
+            Submit your mint address. We verify on-chain that the fee configuration and admin revocation are correct.
+          </p>
+        </div>
+
+        <div class="flow-connector reveal">&rarr;</div>
+
+        <div class="step-card glass-card reveal">
+          <span class="step-number">Step 03</span>
+          <div class="step-icon">03</div>
+          <h3 class="step-title">Automated Engine</h3>
+          <p class="step-desc">
+            Fees are claimed automatically, split into perpetual positions, buybacks, and revenue. Fully autonomous.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIVE DASHBOARD -->
+  <section class="section" id="dashboard">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Live Data</span>
+        <h2 class="section-title">Active Derivatives</h2>
+        <p class="section-subtitle">
+          Real-time performance of all registered Fission derivatives.
+        </p>
+      </div>
+
+      <div class="reveal">
+        <div class="dashboard-controls">
+          <input type="text" id="dashboard-search" class="dashboard-search" placeholder="Search tokens..." />
+          <select id="dashboard-sort" class="dashboard-sort">
+            <option value="volume24h">Sort: 24h Volume</option>
+            <option value="fees24h">Sort: 24h Fees</option>
+            <option value="pnl">Sort: PnL</option>
+            <option value="buybacks">Sort: Buybacks</option>
+          </select>
+        </div>
+
+        <div class="dashboard-wrapper">
+          <table class="dashboard-table">
+            <thead>
+              <tr>
+                <th data-sort="token">Token</th>
+                <th data-sort="linkedTo">Underlying</th>
+                <th data-sort="volume24h">24h Volume</th>
+                <th data-sort="fees24h">Fees Claimed</th>
+                <th data-sort="positionSize">Position</th>
+                <th data-sort="pnl">PnL</th>
+                <th data-sort="buybacks">Buybacks</th>
+              </tr>
+            </thead>
+            <tbody id="dashboard-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LAUNCH YOUR TOKEN -->
+  <section class="section" id="launch">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Launch</span>
+        <h2 class="section-title">Create a Derivative</h2>
+        <p class="section-subtitle">
+          Pick a token, name your derivative, deploy on Pump.fun, and register with Fission.
+        </p>
+      </div>
+
+      <div class="launch-wizard reveal">
+        <div class="wizard-steps">
+          <div class="wizard-step-indicator active"></div>
+          <div class="wizard-step-indicator"></div>
+          <div class="wizard-step-indicator"></div>
+          <div class="wizard-step-indicator"></div>
+        </div>
+
+        <!-- Step 1 -->
+        <div class="wizard-panel active" id="wizard-step-1">
+          <h3 class="wizard-panel-title">Pick a Token</h3>
+          <p class="wizard-panel-desc">
+            Choose the underlying asset your derivative will track. This determines which perp the engine opens positions on.
+          </p>
+          <input type="text" id="token-search" placeholder="Search tokens..." />
+          <div class="popular-tokens" id="popular-tokens-grid"></div>
+          <div class="wizard-nav">
+            <div></div>
+            <button class="btn btn-primary btn-sm" data-wizard-next>NEXT</button>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="wizard-panel" id="wizard-step-2">
+          <h3 class="wizard-panel-title">Name Your Derivative</h3>
+          <p class="wizard-panel-desc">
+            Choose a ticker symbol for your derivative token. This will be the token name on Pump.fun.
+          </p>
+          <input type="text" id="derivative-name" placeholder="e.g. TURBO_SOL" maxlength="20" />
+          <div class="wizard-nav">
+            <button class="btn btn-ghost btn-sm" data-wizard-prev>BACK</button>
+            <button class="btn btn-primary btn-sm" data-wizard-next>NEXT</button>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="wizard-panel" id="wizard-step-3">
+          <h3 class="wizard-panel-title">Setup on Pump.fun</h3>
+          <p class="wizard-panel-desc">
+            Create your token on Pump.fun with these exact settings. This is required for on-chain verification.
+          </p>
+          <div class="instruction-steps">
+            <div class="instruction-step">
+              <span class="instruction-num">1</span>
+              <div class="instruction-content">
+                <p>Go to pump.fun and create your token. Set <strong>100% creator fee share</strong> to this address:</p>
+                <div class="copy-row">
+                  <span class="copy-address" id="protocol-wallet-address"></span>
+                  <button class="copy-btn" data-copy>COPY</button>
+                </div>
+              </div>
+            </div>
+            <div class="instruction-step">
+              <span class="instruction-num">2</span>
+              <div class="instruction-content">
+                <p><strong>Revoke admin authority</strong> on the fee sharing config. This locks the allocation permanently.</p>
+              </div>
+            </div>
+            <div class="instruction-step">
+              <span class="instruction-num">3</span>
+              <div class="instruction-content">
+                <p>Copy the <strong>mint address</strong> of your newly created token. You will need it in the next step.</p>
+              </div>
+            </div>
+          </div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost btn-sm" data-wizard-prev>BACK</button>
+            <button class="btn btn-primary btn-sm" data-wizard-next>NEXT</button>
+          </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="wizard-panel" id="wizard-step-4">
+          <h3 class="wizard-panel-title">Verify and Register</h3>
+          <p class="wizard-panel-desc">
+            Paste your token's mint address. We will verify the on-chain sharing configuration and register it with the protocol.
+          </p>
+          <div class="mint-input-group">
+            <input type="text" id="mint-address-input" placeholder="Paste mint address..." />
+            <button class="btn btn-primary btn-sm" id="mint-verify-btn">VERIFY</button>
+          </div>
+          <div class="terminal-box mt-3" id="verify-terminal" style="min-height:120px;"></div>
+          <div class="wizard-nav">
+            <button class="btn btn-ghost btn-sm" data-wizard-prev>BACK</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROTOCOL STATS -->
+  <section class="section" id="stats">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Protocol</span>
+        <h2 class="section-title">Protocol Stats</h2>
+      </div>
+
+      <div class="stats-grid stagger-children">
+        <div class="stat-card glass-card reveal">
+          <div class="stat-value"><span class="counter-prefix"></span><span data-counter="derivatives">0</span></div>
+          <div class="stat-label">Active Derivatives</div>
+        </div>
+        <div class="stat-card glass-card reveal">
+          <div class="stat-value"><span class="counter-prefix">$</span><span data-counter="fees">0</span></div>
+          <div class="stat-label">Fees Claimed</div>
+        </div>
+        <div class="stat-card glass-card reveal">
+          <div class="stat-value"><span class="counter-prefix">+$</span><span data-counter="pnl">0</span></div>
+          <div class="stat-label">Perp PnL</div>
+        </div>
+        <div class="stat-card glass-card reveal">
+          <div class="stat-value"><span class="counter-prefix">$</span><span data-counter="buybacks">0</span></div>
+          <div class="stat-label">Buybacks Executed</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOR CREATORS / FOR HOLDERS -->
+  <section class="section" id="audience">
+    <div class="container">
+      <div class="audience-grid stagger-children">
+        <div class="audience-card glass-card reveal">
+          <span class="section-label">For Creators</span>
+          <h3 class="audience-title">Launch Derivatives</h3>
+          <ul class="audience-list">
+            <li>Launch a derivative in minutes with zero upfront cost</li>
+            <li>Creator fees are automatically routed to the Fission engine</li>
+            <li>On-chain verification ensures permanent fee allocation</li>
+            <li>No smart contract deployment required</li>
+          </ul>
+        </div>
+
+        <div class="audience-card glass-card reveal">
+          <span class="section-label">For Holders</span>
+          <h3 class="audience-title">Backed by Perps</h3>
+          <ul class="audience-list">
+            <li>Derivatives are backed by real perpetual positions on Drift</li>
+            <li>Automated buybacks create sustained demand pressure</li>
+            <li>Risk management protects against drawdowns</li>
+            <li>All operations are transparent and verifiable on-chain</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-grid">
+        <div>
+          <div class="footer-brand">FISSION</div>
+          <div class="footer-brand-sub">Perpetual-backed derivatives on Solana</div>
+        </div>
+        <div class="footer-links">
+          <a href="#how-it-works">Docs</a>
+          <a href="#">GitHub</a>
+          <a href="#">Twitter</a>
+        </div>
+      </div>
+
+      <div class="footer-bottom">
+        <div class="footer-wallet">
+          <span class="footer-wallet-label">Protocol Wallet</span>
+          <span class="footer-wallet-address" id="footer-wallet-copy">Loading...</span>
+        </div>
+        <span class="footer-copy">Fission Protocol 2025. All operations autonomous.</span>
+      </div>
+    </div>
+  </footer>
+
+</body>
+</html>
+

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00fff2"/>
+      <stop offset="100%" stop-color="#ff00e5"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="64" height="64" fill="#000"/>
+  <!-- Atom-like nucleus -->
+  <circle cx="32" cy="32" r="6" fill="url(#g)" filter="url(#glow)"/>
+  <!-- Orbital rings -->
+  <ellipse cx="32" cy="32" rx="22" ry="8" fill="none" stroke="#00fff2" stroke-width="1.5" opacity="0.8" transform="rotate(-30 32 32)" filter="url(#glow)"/>
+  <ellipse cx="32" cy="32" rx="22" ry="8" fill="none" stroke="#ff00e5" stroke-width="1.5" opacity="0.6" transform="rotate(30 32 32)" filter="url(#glow)"/>
+  <ellipse cx="32" cy="32" rx="22" ry="8" fill="none" stroke="#39ff14" stroke-width="1.5" opacity="0.4" transform="rotate(90 32 32)" filter="url(#glow)"/>
+  <!-- Electron dots -->
+  <circle cx="54" cy="32" r="2.5" fill="#00fff2" filter="url(#glow)"/>
+  <circle cx="18" cy="18" r="2.5" fill="#ff00e5" filter="url(#glow)"/>
+  <circle cx="32" cy="54" r="2.5" fill="#39ff14" filter="url(#glow)"/>
+</svg>
