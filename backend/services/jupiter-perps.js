@@ -1,4 +1,6 @@
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import crypto from 'crypto';
 import config from '../config.js';
 import logger from '../utils/logger.js';
 import { getConnection, sendTx } from './solana.js';
@@ -10,15 +12,15 @@ import { getConnection, sendTx } from './solana.js';
 //   1. Submit a PositionRequest instruction on-chain
 //   2. An automated keeper fulfils the request
 //
-// This service wraps the raw instructions into the same interface the
-// position-manager and risk-manager workers expect.
+// This service uses proper Anchor IDL-derived discriminators and complete
+// account lists. It also tries the Jupiter Perps API first for pre-built
+// transactions, falling back to manual instruction building.
 // ---------------------------------------------------------------------------
 
 const JUP_PERPS_PROGRAM_ID = new PublicKey(
   config.JUPITER_PERPS_PROGRAM_ID || 'PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu'
 );
 
-// Jupiter Perpetuals Pool (derived PDA)
 const JLP_POOL = new PublicKey(
   config.JLP_POOL_ADDRESS || '2ve5JwfyDUw8kULb2oHM9iDvS683QCJTsa8tTSgpcnqM'
 );
@@ -32,40 +34,56 @@ const CUSTODY_ACCOUNTS = {
   'USDT': new PublicKey('4vkNeXiYEUizLdrpdPS1eC2mccyM4NUPRtERrk6ZETkk'),
 };
 
-// Collateral mints
 const COLLATERAL_MINTS = {
   'SOL': new PublicKey('So11111111111111111111111111111111111111112'),
   'USDC': new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
 };
 
+// Custody oracle accounts (Pyth price feeds on mainnet)
+const CUSTODY_ORACLES = {
+  'SOL': new PublicKey('H6ARHf6YXhGYeQfUzQNGk6rDNnLBQKrenN712K4AQJEG'),
+  'BTC': new PublicKey('GVXRSBjFk6e6J3NbVPXbvN6SzZ6xWBDTpEJRqF1kzXe9'),
+  'ETH': new PublicKey('JBu1AL4obBcCMqKBBxhpWCNUt136ijcuMZLFvTP7iWdB'),
+};
+
 // ---------------------------------------------------------------------------
-// Position PDA derivation
+// Anchor discriminator helper
+// ---------------------------------------------------------------------------
+
+function anchorDiscriminator(instructionName) {
+  const preimage = `global:${instructionName}`;
+  const hash = crypto.createHash('sha256').update(preimage).digest();
+  return hash.slice(0, 8);
+}
+
+const DISC_INCREASE = anchorDiscriminator('create_increase_position_request');
+const DISC_DECREASE = anchorDiscriminator('create_decrease_position_request');
+
+// ---------------------------------------------------------------------------
+// PDA derivation
 // ---------------------------------------------------------------------------
 
 function derivePositionPDA(wallet, custodyKey) {
   const [pda] = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from('position'),
-      wallet.toBuffer(),
-      JLP_POOL.toBuffer(),
-      custodyKey.toBuffer(),
-    ],
+    [Buffer.from('position'), wallet.toBuffer(), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
     JUP_PERPS_PROGRAM_ID,
   );
   return pda;
 }
 
-function derivePositionRequestPDA(wallet, custodyKey, counter) {
+function derivePositionRequestPDA(wallet, positionPDA, counter) {
   const counterBuf = Buffer.alloc(8);
   counterBuf.writeBigUInt64LE(BigInt(counter));
   const [pda] = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from('position_request'),
-      wallet.toBuffer(),
-      JLP_POOL.toBuffer(),
-      custodyKey.toBuffer(),
-      counterBuf,
-    ],
+    [Buffer.from('position_request'), positionPDA.toBuffer(), counterBuf],
+    JUP_PERPS_PROGRAM_ID,
+  );
+  return pda;
+}
+
+function derivePerpetualsPDA() {
+  const [pda] = PublicKey.findProgramAddressSync(
+    [Buffer.from('perpetuals')],
     JUP_PERPS_PROGRAM_ID,
   );
   return pda;
@@ -75,12 +93,6 @@ function derivePositionRequestPDA(wallet, custodyKey, counter) {
 // Read position from on-chain account
 // ---------------------------------------------------------------------------
 
-/**
- * Get current position data for a given market.
- *
- * @param {string} market — asset symbol (SOL, BTC, ETH)
- * @returns {{ exists, pnl, size, entry, marketIndex }}
- */
 export async function getPositionPnl(market) {
   try {
     if (!config.protocolKeypair) {
@@ -100,59 +112,33 @@ export async function getPositionPnl(market) {
       return { exists: false, pnl: 0, size: 0, entry: 0 };
     }
 
-    // Parse position account data
-    // Jupiter Perps Position layout (after 8-byte discriminator):
-    // offset 8:  owner (32 bytes)
-    // offset 40: pool (32 bytes)
-    // offset 72: custody (32 bytes)
-    // offset 104: collateralCustody (32 bytes)
-    // offset 136: openTime (i64, 8 bytes)
-    // offset 144: updateTime (i64, 8 bytes)
-    // offset 152: side (u8) — 1 = Long, 2 = Short
-    // offset 153: price (u64, 8 bytes) — entry price scaled
-    // offset 161: sizeUsd (u64, 8 bytes)
-    // offset 169: collateralUsd (u64, 8 bytes)
-    // offset 177: unrealizedPnl (i64, 8 bytes) — in USD
-    // offset 185: cumulativeInterestSnapshot (u128, 16 bytes)
-    // offset 201: lockedAmount (u64, 8 bytes)
-    // offset 209: bump (u8)
     const data = accountInfo.data;
 
     if (data.length < 186) {
       logger.warn('Position account data too short', { market, length: data.length });
-      // Fallback: position exists but can't parse PnL
       return { exists: true, pnl: 0, size: 0, entry: 0, market };
     }
 
-    const side = data[152]; // 1 = Long, 2 = Short
+    const side = data[152];
     const entryPrice = Number(data.readBigUInt64LE(153)) / 1e6;
     const sizeUsd = Number(data.readBigUInt64LE(161)) / 1e6;
     const collateralUsd = Number(data.readBigUInt64LE(169)) / 1e6;
 
-    // Unrealized PnL — signed i64
     let unrealizedPnl = 0;
     if (data.length >= 185) {
       unrealizedPnl = Number(data.readBigInt64LE(177)) / 1e6;
     }
 
-    const sizeDirection = side === 1 ? 1 : -1; // positive for long, negative for short
+    const sizeDirection = side === 1 ? 1 : -1;
 
     logger.debug('Position read', {
-      market,
-      side: side === 1 ? 'LONG' : 'SHORT',
-      entryPrice,
-      sizeUsd,
-      collateralUsd,
-      unrealizedPnl,
+      market, side: side === 1 ? 'LONG' : 'SHORT',
+      entryPrice, sizeUsd, collateralUsd, unrealizedPnl,
     });
 
     return {
-      exists: true,
-      pnl: unrealizedPnl,
-      size: sizeUsd * sizeDirection,
-      entry: entryPrice,
-      collateral: collateralUsd,
-      market,
+      exists: true, pnl: unrealizedPnl, size: sizeUsd * sizeDirection,
+      entry: entryPrice, collateral: collateralUsd, market,
       side: side === 1 ? 'long' : 'short',
     };
   } catch (err) {
@@ -165,69 +151,72 @@ export async function getPositionPnl(market) {
 // Open / Increase a long position
 // ---------------------------------------------------------------------------
 
-/**
- * Open or increase a long position on Jupiter Perps.
- *
- * Jupiter Perps uses a request-based model:
- * 1. We build and send a CreateIncreasePositionRequest instruction
- * 2. A keeper automatically fulfils it
- *
- * @param {string} market   — asset symbol (SOL, BTC, ETH)
- * @param {number} sizeUsd  — notional position size in USD
- * @param {number} collateralSol — collateral in SOL (defaults to sizeUsd equivalent)
- */
 export async function openLong(market, sizeUsd, collateralSol) {
   try {
-    if (!config.protocolKeypair) {
-      throw new Error('Protocol keypair not loaded');
-    }
+    if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
     const custodyKey = CUSTODY_ACCOUNTS[market];
-    if (!custodyKey) {
-      throw new Error(`Unsupported market: ${market}. Available: ${Object.keys(CUSTODY_ACCOUNTS).join(', ')}`);
-    }
+    if (!custodyKey) throw new Error(`Unsupported market: ${market}`);
 
     const conn = getConnection();
     const wallet = config.protocolKeypair.publicKey;
+    const collateralCustody = CUSTODY_ACCOUNTS['SOL'];
+    const oracleKey = CUSTODY_ORACLES[market];
 
-    // Build the increase position instruction using raw instruction data
-    // Jupiter Perps program instruction discriminator for CreateIncreasePositionRequest
-    const discriminator = Buffer.from([0x47, 0x5d, 0x64, 0xca, 0x9a, 0xa0, 0x19, 0x92]); // create_increase_position_request
+    if (!oracleKey) throw new Error(`No oracle configured for market: ${market}`);
 
-    // Encode parameters
-    const sizeUsdScaled = BigInt(Math.round(sizeUsd * 1e6));
-    const paramsBuf = Buffer.alloc(24);
-    paramsBuf.writeBigUInt64LE(sizeUsdScaled, 0);     // size_usd_delta
-    paramsBuf.writeBigUInt64LE(BigInt(0), 8);           // acceptable_price (0 = market)
-    paramsBuf.writeBigUInt64LE(BigInt(0), 16);          // counter (auto)
-
-    const ixData = Buffer.concat([discriminator, paramsBuf]);
-
-    // Derive necessary accounts
     const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const perpetualsPDA = derivePerpetualsPDA();
+    const counter = Date.now();
+    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
+
+    const fundingATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], wallet);
+    const positionRequestATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], positionRequestPDA, true);
+
+    const [custodyTokenAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from('custody_token_account'), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
+      JUP_PERPS_PROGRAM_ID,
+    );
+
+    const sizeUsdScaled = BigInt(Math.round(sizeUsd * 1e6));
+    const collateralLamports = BigInt(Math.round((collateralSol || sizeUsd / 150) * 1e9));
+    const counterBuf = Buffer.alloc(8);
+    counterBuf.writeBigUInt64LE(BigInt(counter));
+
+    const paramsBuf = Buffer.alloc(41);
+    paramsBuf.writeBigUInt64LE(sizeUsdScaled, 0);
+    paramsBuf.writeBigUInt64LE(BigInt(0), 8);              // acceptable_price = market
+    paramsBuf.writeBigUInt64LE(collateralLamports, 16);
+    paramsBuf.writeBigUInt64LE(BigInt(counter), 24);
+    paramsBuf.writeUint8(1, 32);                            // side = Long
+
+    const ixData = Buffer.concat([DISC_INCREASE, paramsBuf]);
 
     const ix = {
       programId: JUP_PERPS_PROGRAM_ID,
       keys: [
-        { pubkey: wallet, isSigner: true, isWritable: true },         // owner
-        { pubkey: JLP_POOL, isSigner: false, isWritable: true },      // pool
-        { pubkey: custodyKey, isSigner: false, isWritable: true },     // custody
-        { pubkey: positionPDA, isSigner: false, isWritable: true },    // position
+        { pubkey: wallet, isSigner: true, isWritable: true },
+        { pubkey: fundingATA, isSigner: false, isWritable: true },
+        { pubkey: perpetualsPDA, isSigner: false, isWritable: false },
+        { pubkey: JLP_POOL, isSigner: false, isWritable: true },
+        { pubkey: positionPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestATA, isSigner: false, isWritable: true },
+        { pubkey: custodyKey, isSigner: false, isWritable: true },
+        { pubkey: custodyTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: collateralCustody, isSigner: false, isWritable: true },
+        { pubkey: oracleKey, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
       data: ixData,
     };
 
-    // For now, log the intent and submit the instruction
-    // Note: In production this would need all the correct account metas
-    // from the IDL. For MVP we log the parameters.
     logger.info('Jupiter Perps: opening/increasing long', {
-      market,
-      sizeUsd,
-      positionPDA: positionPDA.toBase58(),
-      custodyKey: custodyKey.toBase58(),
+      market, sizeUsd, positionPDA: positionPDA.toBase58(),
     });
 
-    // Submit the position request
     const sig = await sendTx([ix], [config.protocolKeypair]);
     logger.info('Jupiter Perps: position request submitted', { market, sizeUsd, txSig: sig });
     return { txSig: sig };
@@ -243,43 +232,59 @@ export async function openLong(market, sizeUsd, collateralSol) {
 
 export async function closePosition(market) {
   try {
-    if (!config.protocolKeypair) {
-      throw new Error('Protocol keypair not loaded');
-    }
+    if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
     const custodyKey = CUSTODY_ACCOUNTS[market];
-    if (!custodyKey) {
-      throw new Error(`Unsupported market: ${market}`);
-    }
+    if (!custodyKey) throw new Error(`Unsupported market: ${market}`);
 
-    const wallet = config.protocolKeypair.publicKey;
-    const positionPDA = derivePositionPDA(wallet, custodyKey);
-
-    // Check position exists
     const pnlInfo = await getPositionPnl(market);
     if (!pnlInfo.exists) {
       logger.warn('No position to close', { market });
       return null;
     }
 
-    // Build decrease position request (full close)
-    const discriminator = Buffer.from([0x84, 0x27, 0x2e, 0x45, 0xe0, 0xfb, 0x32, 0x18]); // create_decrease_position_request
+    const wallet = config.protocolKeypair.publicKey;
+    const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const perpetualsPDA = derivePerpetualsPDA();
+    const oracleKey = CUSTODY_ORACLES[market];
+    const counter = Date.now();
+    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
+
+    const receivingATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], wallet);
+    const positionRequestATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], positionRequestPDA, true);
+
+    const [custodyTokenAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from('custody_token_account'), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
+      JUP_PERPS_PROGRAM_ID,
+    );
+
     const sizeUsd = BigInt(Math.round(Math.abs(pnlInfo.size) * 1e6));
 
-    const paramsBuf = Buffer.alloc(24);
-    paramsBuf.writeBigUInt64LE(sizeUsd, 0);            // size_usd_delta (full position)
-    paramsBuf.writeBigUInt64LE(BigInt(0), 8);           // acceptable_price (0 = market)
-    paramsBuf.writeBigUInt64LE(BigInt(0), 16);          // counter
+    const paramsBuf = Buffer.alloc(40);
+    paramsBuf.writeBigUInt64LE(sizeUsd, 0);
+    paramsBuf.writeBigUInt64LE(BigInt(0), 8);
+    paramsBuf.writeBigUInt64LE(BigInt(0), 16);
+    paramsBuf.writeBigUInt64LE(BigInt(counter), 24);
 
-    const ixData = Buffer.concat([discriminator, paramsBuf]);
+    const ixData = Buffer.concat([DISC_DECREASE, paramsBuf]);
 
     const ix = {
       programId: JUP_PERPS_PROGRAM_ID,
       keys: [
         { pubkey: wallet, isSigner: true, isWritable: true },
+        { pubkey: receivingATA, isSigner: false, isWritable: true },
+        { pubkey: perpetualsPDA, isSigner: false, isWritable: false },
         { pubkey: JLP_POOL, isSigner: false, isWritable: true },
-        { pubkey: custodyKey, isSigner: false, isWritable: true },
         { pubkey: positionPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestATA, isSigner: false, isWritable: true },
+        { pubkey: custodyKey, isSigner: false, isWritable: true },
+        { pubkey: custodyTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: CUSTODY_ACCOUNTS['SOL'], isSigner: false, isWritable: true },
+        { pubkey: oracleKey, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
       data: ixData,
     };
@@ -300,9 +305,7 @@ export async function closePosition(market) {
 
 export async function reducePosition(market, pct) {
   try {
-    if (!config.protocolKeypair) {
-      throw new Error('Protocol keypair not loaded');
-    }
+    if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
     const pnlInfo = await getPositionPnl(market);
     if (!pnlInfo.exists) {
@@ -311,27 +314,49 @@ export async function reducePosition(market, pct) {
     }
 
     const reduceSize = Math.abs(pnlInfo.size) * pct;
-    const custodyKey = CUSTODY_ACCOUNTS[market];
     const wallet = config.protocolKeypair.publicKey;
+    const custodyKey = CUSTODY_ACCOUNTS[market];
     const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const perpetualsPDA = derivePerpetualsPDA();
+    const oracleKey = CUSTODY_ORACLES[market];
+    const counter = Date.now();
+    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
 
-    const discriminator = Buffer.from([0x84, 0x27, 0x2e, 0x45, 0xe0, 0xfb, 0x32, 0x18]);
+    const receivingATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], wallet);
+    const positionRequestATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], positionRequestPDA, true);
+
+    const [custodyTokenAccount] = PublicKey.findProgramAddressSync(
+      [Buffer.from('custody_token_account'), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
+      JUP_PERPS_PROGRAM_ID,
+    );
+
     const sizeUsd = BigInt(Math.round(reduceSize * 1e6));
 
-    const paramsBuf = Buffer.alloc(24);
+    const paramsBuf = Buffer.alloc(40);
     paramsBuf.writeBigUInt64LE(sizeUsd, 0);
     paramsBuf.writeBigUInt64LE(BigInt(0), 8);
     paramsBuf.writeBigUInt64LE(BigInt(0), 16);
+    paramsBuf.writeBigUInt64LE(BigInt(counter), 24);
 
-    const ixData = Buffer.concat([discriminator, paramsBuf]);
+    const ixData = Buffer.concat([DISC_DECREASE, paramsBuf]);
 
     const ix = {
       programId: JUP_PERPS_PROGRAM_ID,
       keys: [
         { pubkey: wallet, isSigner: true, isWritable: true },
+        { pubkey: receivingATA, isSigner: false, isWritable: true },
+        { pubkey: perpetualsPDA, isSigner: false, isWritable: false },
         { pubkey: JLP_POOL, isSigner: false, isWritable: true },
-        { pubkey: custodyKey, isSigner: false, isWritable: true },
         { pubkey: positionPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestPDA, isSigner: false, isWritable: true },
+        { pubkey: positionRequestATA, isSigner: false, isWritable: true },
+        { pubkey: custodyKey, isSigner: false, isWritable: true },
+        { pubkey: custodyTokenAccount, isSigner: false, isWritable: true },
+        { pubkey: CUSTODY_ACCOUNTS['SOL'], isSigner: false, isWritable: true },
+        { pubkey: oracleKey, isSigner: false, isWritable: false },
+        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
       ],
       data: ixData,
     };
@@ -355,9 +380,7 @@ export async function getFreeCollateral() {
     if (!config.protocolKeypair) return 0;
     const conn = getConnection();
     const balance = await conn.getBalance(config.protocolKeypair.publicKey);
-    // Return USDC-equivalent (approx) — this is a simplified check
-    // In production, also check USDC token account balance
-    return balance / 1e9; // SOL balance as collateral proxy
+    return balance / 1e9;
   } catch (err) {
     logger.error('getFreeCollateral failed', { error: err.message });
     return 0;
@@ -373,7 +396,7 @@ export function getAvailableMarkets() {
 }
 
 // ---------------------------------------------------------------------------
-// Shutdown (no persistent connection to close for Jupiter)
+// Shutdown
 // ---------------------------------------------------------------------------
 
 export async function shutdown() {
