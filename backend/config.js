@@ -58,11 +58,12 @@ const INTERVALS = {
 };
 
 // ---------------------------------------------------------------------------
-// Solana / Drift / Jupiter
+// Solana / Jupiter
 // ---------------------------------------------------------------------------
 const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-const DRIFT_ENV     = process.env.DRIFT_ENV || 'mainnet-beta';
 const JUPITER_API_URL = process.env.JUPITER_API_URL || 'https://api.jup.ag/swap/v1';
+const JUPITER_PERPS_PROGRAM_ID = process.env.JUPITER_PERPS_PROGRAM_ID || 'PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu';
+const JLP_POOL_ADDRESS = process.env.JLP_POOL_ADDRESS || '2ve5JwfyDUw8kULb2oHM9iDvS683QCJTsa8tTSgpcnqM';
 
 // ---------------------------------------------------------------------------
 // Server
@@ -76,34 +77,10 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT || '';
 
 // ---------------------------------------------------------------------------
-// Drift perp market indices (mainnet-beta)
-// Full list: https://app.drift.trade
+// Jupiter Perps — supported markets
+// These map to custody accounts in the JLP pool
 // ---------------------------------------------------------------------------
-const DRIFT_MARKET_INDICES = {
-  'SOL':    0,
-  'BTC':    1,
-  'ETH':    2,
-  'APT':    9,
-  'MATIC':  10,
-  'ARB':    12,
-  'DOGE':   15,
-  'BNB':    16,
-  'SUI':    17,
-  'PEPE':   18,
-  'JTO':    20,
-  'BONK':   22,
-  'PYTH':   23,
-  'WIF':    24,
-  'RNDR':   25,
-  'W':      26,
-  'HNT':    27,
-  'JUP':    28,
-  'TNSR':   29,
-  'MEW':    32,
-  'POPCAT': 36,
-  'CLOUD':  38,
-  'RENDER': 25,
-};
+const PERPS_MARKETS = ['SOL', 'BTC', 'ETH'];
 
 // ---------------------------------------------------------------------------
 // Export
@@ -116,9 +93,10 @@ const config = {
   RISK,
   INTERVALS,
   SOLANA_RPC_URL,
-  DRIFT_ENV,
   JUPITER_API_URL,
-  DRIFT_MARKET_INDICES,
+  JUPITER_PERPS_PROGRAM_ID,
+  JLP_POOL_ADDRESS,
+  PERPS_MARKETS,
   PORT,
   NODE_ENV,
   FIREBASE_SERVICE_ACCOUNT,

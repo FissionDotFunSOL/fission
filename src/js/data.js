@@ -8,27 +8,26 @@
 
 export const PROTOCOL_WALLET = 'HgeoK9ASUYey5g2MBSGHfCdauDzLv93x6vAs7j492i9c';
 
+// Tokens with Jupiter Perps support (derivatives available)
+export const PERPS_TOKENS = [
+  { symbol: 'SOL',  name: 'Solana',   hasPerps: true },
+  { symbol: 'BTC',  name: 'Bitcoin',  hasPerps: true },
+  { symbol: 'ETH',  name: 'Ethereum', hasPerps: true },
+];
+
+// All popular tokens (perps + non-perps)
 export const POPULAR_TOKENS = [
-  { symbol: 'SOL',    name: 'Solana' },
-  { symbol: 'BTC',    name: 'Bitcoin' },
-  { symbol: 'ETH',    name: 'Ethereum' },
-  { symbol: 'BONK',   name: 'Bonk' },
-  { symbol: 'WIF',    name: 'dogwifhat' },
-  { symbol: 'JUP',    name: 'Jupiter' },
-  { symbol: 'PYTH',   name: 'Pyth Network' },
-  { symbol: 'JTO',    name: 'Jito' },
-  { symbol: 'RNDR',   name: 'Render' },
-  { symbol: 'HNT',    name: 'Helium' },
-  { symbol: 'DOGE',   name: 'Dogecoin' },
-  { symbol: 'SUI',    name: 'Sui' },
-  { symbol: 'PEPE',   name: 'Pepe' },
-  { symbol: 'W',      name: 'Wormhole' },
-  { symbol: 'TNSR',   name: 'Tensor' },
-  { symbol: 'MEW',    name: 'cat in a dogs world' },
-  { symbol: 'POPCAT', name: 'Popcat' },
-  { symbol: 'APT',    name: 'Aptos' },
-  { symbol: 'ARB',    name: 'Arbitrum' },
-  { symbol: 'BNB',    name: 'BNB' },
+  ...PERPS_TOKENS,
+  { symbol: 'BONK',   name: 'Bonk',          hasPerps: false },
+  { symbol: 'WIF',    name: 'dogwifhat',      hasPerps: false },
+  { symbol: 'JUP',    name: 'Jupiter',        hasPerps: false },
+  { symbol: 'PYTH',   name: 'Pyth Network',   hasPerps: false },
+  { symbol: 'JTO',    name: 'Jito',           hasPerps: false },
+  { symbol: 'RNDR',   name: 'Render',         hasPerps: false },
+  { symbol: 'HNT',    name: 'Helium',         hasPerps: false },
+  { symbol: 'DOGE',   name: 'Dogecoin',       hasPerps: false },
+  { symbol: 'SUI',    name: 'Sui',            hasPerps: false },
+  { symbol: 'PEPE',   name: 'Pepe',           hasPerps: false },
 ];
 
 // Dashboard demo data — only shown when backend is offline.

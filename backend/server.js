@@ -5,7 +5,7 @@ import config from './config.js';
 import logger from './utils/logger.js';
 import routes from './api/routes.js';
 import { startScheduler, stopScheduler } from './workers/scheduler.js';
-import { shutdown as shutdownDrift } from './services/drift.js';
+import { shutdown as shutdownPerps } from './services/jupiter-perps.js';
 
 // ---------------------------------------------------------------------------
 // Express app
@@ -73,9 +73,9 @@ const server = app.listen(config.PORT, () => {
     rpc: config.SOLANA_RPC_URL.includes('mainnet-beta.solana.com') ? 'PUBLIC (rate-limited)' : 'CUSTOM',
     rpcUrl: config.SOLANA_RPC_URL,
     firebase: config.FIREBASE_SERVICE_ACCOUNT ? 'CONFIGURED' : 'MOCK MODE (in-memory)',
-    drift: config.DRIFT_ENV,
-    jupiter: config.JUPITER_API_URL,
-    markets: Object.keys(config.DRIFT_MARKET_INDICES).length + ' perp markets',
+    jupiterPerps: config.JUPITER_PERPS_PROGRAM_ID,
+    jupiterSwap: config.JUPITER_API_URL,
+    markets: config.PERPS_MARKETS.join(', '),
   };
 
   logger.info('Startup diagnostics', diag);
@@ -114,11 +114,11 @@ async function gracefulShutdown(signal) {
   // Stop workers
   stopScheduler();
 
-  // Disconnect Drift
+  // Disconnect services
   try {
-    await shutdownDrift();
+    await shutdownPerps();
   } catch (err) {
-    logger.warn('Drift shutdown error during graceful exit', { error: err.message });
+    logger.warn('Jupiter Perps shutdown error during graceful exit', { error: err.message });
   }
 
   // Allow a brief window for in-flight ops

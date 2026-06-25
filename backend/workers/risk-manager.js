@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import * as drift from '../services/drift.js';
+import * as perps from '../services/jupiter-perps.js';
 import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { retry } from '../utils/helpers.js';
@@ -25,14 +25,14 @@ export async function runRiskCheck() {
     return [];
   }
 
-  // Check overall account health
+  // Check overall collateral (wallet SOL balance)
   let freeCollateral = 0;
   try {
-    freeCollateral = await drift.getFreeCollateral();
-    logger.info('Drift account free collateral', { freeCollateral: freeCollateral.toFixed(2) });
+    freeCollateral = await perps.getFreeCollateral();
+    logger.info('Wallet SOL balance (collateral proxy)', { freeCollateral: freeCollateral.toFixed(4) });
 
-    if (freeCollateral < 10) {
-      logger.warn('LOW FREE COLLATERAL — account at risk', { freeCollateral });
+    if (freeCollateral < 0.1) {
+      logger.warn('LOW SOL BALANCE — may not have enough for transaction fees', { freeCollateral });
     }
   } catch (err) {
     logger.warn('Could not fetch free collateral', { error: err.message });
@@ -64,14 +64,19 @@ export async function runRiskCheck() {
 async function checkTokenRisk(token, freeCollateral) {
   const mint = token.id || token.mint;
   const position = await db.getPosition(mint);
-  if (!position || position.marketIndex === undefined || position.marketIndex === null) return null;
 
-  const marketIndex = position.marketIndex;
+  // Resolve market from token underlying
+  const underlying = token.underlying?.toUpperCase();
+  const market = underlying && config.PERPS_MARKETS.includes(underlying)
+    ? underlying
+    : null;
+
+  if (!market || !position || position.deployedSol <= 0) return null;
 
   // Get on-chain PnL (with retry)
   const pnlInfo = await retry(
-    () => drift.getPositionPnl(marketIndex),
-    { retries: 2, delayMs: 2000, label: `riskCheck-pnl(${marketIndex})` }
+    () => perps.getPositionPnl(market),
+    { retries: 2, delayMs: 2000, label: `riskCheck-pnl(${market})` }
   );
 
   if (!pnlInfo.exists) {
@@ -79,6 +84,7 @@ async function checkTokenRisk(token, freeCollateral) {
     if (position.deployedSol > 0) {
       logger.warn('Position no longer exists on-chain but DB shows deployed capital', {
         mint,
+        market,
         deployedSol: position.deployedSol,
       });
 
@@ -93,9 +99,10 @@ async function checkTokenRisk(token, freeCollateral) {
 
       return {
         mint,
+        market,
         alert: 'position-missing',
         action: 'marked-as-closed',
-        detail: 'Position no longer exists on Drift — may have been liquidated',
+        detail: 'Position no longer exists on Jupiter Perps — may have been liquidated',
       };
     }
     return null;
@@ -109,25 +116,26 @@ async function checkTokenRisk(token, freeCollateral) {
 
   // -----------------------------------------------------------------------
   // Check 1: Liquidation proximity
-  // If free collateral is dangerously low relative to position size
+  // If collateral ratio is dangerously low relative to position size
   // -----------------------------------------------------------------------
-  if (freeCollateral > 0 && pnlInfo.size !== 0) {
-    const positionNotional = Math.abs(pnlInfo.size) * (pnlInfo.entry || solPrice || 150);
-    const marginRatio = freeCollateral / positionNotional;
+  if (pnlInfo.collateral > 0 && pnlInfo.size !== 0) {
+    const positionNotional = Math.abs(pnlInfo.size);
+    const marginRatio = pnlInfo.collateral / positionNotional;
 
     if (marginRatio < config.RISK.liquidationWarningPct) {
       logger.warn('LIQUIDATION PROXIMITY WARNING', {
         mint,
+        market,
         marginRatio: (marginRatio * 100).toFixed(1) + '%',
-        freeCollateral: freeCollateral.toFixed(2),
+        collateral: pnlInfo.collateral.toFixed(2),
         positionNotional: positionNotional.toFixed(2),
       });
 
       // Emergency reduce 50%
       try {
         const result = await retry(
-          () => drift.reducePosition(marketIndex, 0.5),
-          { retries: 3, delayMs: 1000, label: `emergencyReduce(${marketIndex})` }
+          () => perps.reducePosition(market, 0.5),
+          { retries: 3, delayMs: 1000, label: `emergencyReduce(${market})` }
         );
 
         await db.setPosition(mint, {
@@ -142,6 +150,7 @@ async function checkTokenRisk(token, freeCollateral) {
 
         return {
           mint,
+          market,
           alert: 'liquidation-proximity',
           marginRatio,
           action: 'reduced-50%',
@@ -150,6 +159,7 @@ async function checkTokenRisk(token, freeCollateral) {
       } catch (err) {
         logger.error('FAILED TO REDUCE ON LIQUIDATION WARNING', {
           mint,
+          market,
           error: err.message,
         });
       }
@@ -165,6 +175,7 @@ async function checkTokenRisk(token, freeCollateral) {
   if (drawdownPct >= config.RISK.maxDrawdownPct) {
     logger.warn('MAX DRAWDOWN TRIGGERED', {
       mint,
+      market,
       drawdownPct: (drawdownPct * 100).toFixed(1) + '%',
       pnl: pnlInfo.pnl,
     });
@@ -172,8 +183,8 @@ async function checkTokenRisk(token, freeCollateral) {
     try {
       const reducePct = config.RISK.drawdownReducePct;
       const result = await retry(
-        () => drift.reducePosition(marketIndex, reducePct),
-        { retries: 2, delayMs: 3000, label: `drawdownReduce(${marketIndex})` }
+        () => perps.reducePosition(market, reducePct),
+        { retries: 2, delayMs: 3000, label: `drawdownReduce(${market})` }
       );
 
       await db.setPosition(mint, {
@@ -188,6 +199,7 @@ async function checkTokenRisk(token, freeCollateral) {
 
       return {
         mint,
+        market,
         alert: 'max-drawdown',
         drawdownPct,
         action: `reduced-${(reducePct * 100).toFixed(0)}%`,
@@ -196,6 +208,7 @@ async function checkTokenRisk(token, freeCollateral) {
     } catch (err) {
       logger.error('Failed to reduce position on drawdown', {
         mint,
+        market,
         error: err.message,
       });
     }
@@ -211,6 +224,7 @@ async function checkTokenRisk(token, freeCollateral) {
     if (priceDrop >= config.RISK.circuitBreakerPct) {
       logger.warn('CIRCUIT BREAKER TRIGGERED', {
         mint,
+        market,
         priceDrop: (priceDrop * 100).toFixed(1) + '%',
         entryPrice: pnlInfo.entry,
         currentPrice,
@@ -218,8 +232,8 @@ async function checkTokenRisk(token, freeCollateral) {
 
       try {
         const result = await retry(
-          () => drift.closePosition(marketIndex),
-          { retries: 3, delayMs: 1000, label: `circuitBreaker(${marketIndex})` }
+          () => perps.closePosition(market),
+          { retries: 3, delayMs: 1000, label: `circuitBreaker(${market})` }
         );
 
         await db.setPosition(mint, {
@@ -236,6 +250,7 @@ async function checkTokenRisk(token, freeCollateral) {
 
         return {
           mint,
+          market,
           alert: 'circuit-breaker',
           priceDrop,
           action: 'closed-position',
@@ -244,6 +259,7 @@ async function checkTokenRisk(token, freeCollateral) {
       } catch (err) {
         logger.error('Failed to close position on circuit breaker', {
           mint,
+          market,
           error: err.message,
         });
       }
@@ -258,6 +274,7 @@ async function checkTokenRisk(token, freeCollateral) {
     pnl: pnlInfo.pnl,
     entry: pnlInfo.entry,
     size: pnlInfo.size,
+    market,
     lastRiskCheck: Date.now(),
   });
 

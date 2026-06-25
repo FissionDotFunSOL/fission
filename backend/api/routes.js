@@ -25,7 +25,7 @@ router.get('/runs',            ctrl.listRuns);
 // Stats
 router.get('/stats',           ctrl.getStats);
 
-// Markets (available Drift perp markets)
+// Markets (available Jupiter Perps markets)
 router.get('/markets',         ctrl.listMarkets);
 
 // System Status (full engine state)

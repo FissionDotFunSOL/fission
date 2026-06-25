@@ -9,7 +9,7 @@
   <a href="https://github.com/FissionDotFun/fission/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
   <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/node-18%2B-brightgreen.svg" alt="Node" /></a>
   <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/solana-mainnet-9945FF.svg" alt="Solana" /></a>
-  <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/drift-v2-5B21B6.svg" alt="Drift" /></a>
+  <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/jupiter--perps-22D1EE.svg" alt="Jupiter Perps" /></a>
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@
 
 ## Overview
 
-Fission is a protocol that transforms memecoin creator fees into automated perpetual positions. Creators launch tokens on Pump.fun with fees routed to the Fission engine, which autonomously opens perp positions on Drift, executes buybacks via Jupiter, and manages risk — all without vaults or deposits.
+Fission is a protocol that transforms memecoin creator fees into automated perpetual positions. Creators launch tokens on Pump.fun with fees routed to the Fission engine, which autonomously opens perp positions on Jupiter Perps, executes buybacks via Jupiter, and manages risk — all without vaults or deposits.
 
 <br />
 
@@ -59,7 +59,7 @@ Fission is a protocol that transforms memecoin creator fees into automated perpe
 ### Fee Distribution
 
 ```
-                  +------ 60% ------> Drift Perp Positions
+                  +------ 60% ------> Jupiter Perp Positions
                   |
 Creator Fees -----+------ 20% ------> Token Buyback + Burn
                   |
@@ -107,7 +107,7 @@ fission/
 │   │   └── controllers.js         # Request validation, response formatting
 │   │
 │   ├── services/
-│   │   ├── drift.js               # Drift Protocol SDK — perp order management
+│   │   ├── jupiter-perps.js               # Jupiter Perpetuals — perp order management
 │   │   ├── jupiter.js             # Jupiter Aggregator — token swap execution
 │   │   ├── pumpfun.js             # Pump.fun — fee sharing PDA verification
 │   │   └── solana.js              # Solana RPC connection and wallet management
@@ -115,7 +115,7 @@ fission/
 │   ├── workers/
 │   │   ├── scheduler.js           # Worker lifecycle, health tracking, intervals
 │   │   ├── fee-claimer.js         # Claims accumulated creator fees on-chain
-│   │   ├── position-manager.js    # Opens and adjusts Drift perpetual positions
+│   │   ├── position-manager.js    # Opens and adjusts Jupiter perpetual positions
 │   │   ├── buyback-engine.js      # Executes token buybacks via Jupiter + burn
 │   │   └── risk-manager.js        # Monitors exposure, drawdowns, liquidation risk
 │   │
@@ -145,7 +145,7 @@ graph LR
     B -->|20%| D["Buyback Engine"]
     B -->|10%| E["Protocol Revenue"]
     B -->|10%| F["Ecosystem Fund"]
-    C -->|Perp Orders| G["Drift Protocol"]
+    C -->|Perp Orders| G["Jupiter Perps"]
     D -->|Swap + Burn| H["Jupiter"]
     I["Risk Manager"] -.->|Monitor| C
     I -.->|Monitor| G
@@ -163,7 +163,7 @@ graph LR
 |-------|------------|---------|
 | **Frontend** | Vite, Vanilla JS, CSS Custom Properties | Landing page, dashboard, launch wizard |
 | **Backend** | Node.js, Express | REST API, worker orchestration |
-| **Perpetuals** | Drift Protocol SDK | Opening and managing perp positions |
+| **Perpetuals** | Jupiter Perpetuals | Opening and managing perp positions |
 | **Swaps** | Jupiter Aggregator | Token buybacks and burns |
 | **Database** | Firebase Firestore | Persistent state (mock fallback for dev) |
 | **Blockchain** | Solana | Settlement and on-chain verification |
@@ -261,7 +261,7 @@ The engine runs four autonomous workers in staggered intervals. Each worker inde
 | Worker | Interval | Responsibility |
 |--------|----------|----------------|
 | **Fee Claimer** | 60 min | Claims accumulated creator fees from all registered tokens |
-| **Position Manager** | 75 min | Opens or adjusts Drift perpetual positions based on claimed fees |
+| **Position Manager** | 75 min | Opens or adjusts Jupiter perpetual positions based on claimed fees |
 | **Buyback Engine** | 90 min | Swaps allocated SOL for derivative tokens via Jupiter and burns |
 | **Risk Manager** | 100 min | Monitors position exposure, drawdowns, and liquidation proximity |
 
@@ -276,7 +276,7 @@ Timeline (one cycle):
 60m    Position Manager starts
        ├── Read unclaimed fee pool
        ├── Calculate position sizing
-       └── Submit orders to Drift
+       └── Submit positions on Jupiter Perps
 
 75m    Buyback Engine starts
        ├── Allocate buyback budget

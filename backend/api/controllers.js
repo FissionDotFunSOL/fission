@@ -107,17 +107,17 @@ export async function registerToken(req, res) {
       });
     }
 
-    // ── Resolve Drift market index from underlying ──
+    // ── Resolve Jupiter Perps market from underlying ──
     const underlyingSymbol = underlying?.trim()?.toUpperCase() || null;
-    const driftMarketIndex = underlyingSymbol
-      ? (config.DRIFT_MARKET_INDICES[underlyingSymbol] ?? null)
+    const perpsMarket = underlyingSymbol && config.PERPS_MARKETS.includes(underlyingSymbol)
+      ? underlyingSymbol
       : null;
 
     // ── Store token ──
     const tokenData = {
       mint: trimmedMint,
       underlying: underlyingSymbol,
-      driftMarketIndex,
+      perpsMarket,
       sharingConfigPDA: verification.pda,
       createdAt: Date.now(),
       status: 'active',
@@ -127,7 +127,7 @@ export async function registerToken(req, res) {
     logger.info('Token registered', {
       mint: trimmedMint,
       underlying: underlyingSymbol,
-      driftMarketIndex,
+      perpsMarket,
       pda: verification.pda,
     });
 
@@ -261,12 +261,12 @@ export async function getSystemStatus(_req, res) {
 }
 
 // ---------------------------------------------------------------------------
-// Markets — list available Drift perp markets for the frontend
+// Markets — list available Jupiter Perps markets for the frontend
 // ---------------------------------------------------------------------------
 export async function listMarkets(_req, res) {
-  const markets = Object.entries(config.DRIFT_MARKET_INDICES).map(([symbol, index]) => ({
+  const markets = config.PERPS_MARKETS.map((symbol) => ({
     symbol,
-    marketIndex: index,
+    platform: 'jupiter-perps',
   }));
   res.json({ markets });
 }

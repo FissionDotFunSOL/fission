@@ -9,7 +9,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "@drift-labs/sdk": "^2.107.0",
+    "@coral-xyz/anchor": "^0.30.1",
     "@jup-ag/api": "^6.0.36",
     "@pump-fun/pump-sdk": "^1.0.0",
     "@solana/spl-token": "^0.4.12",

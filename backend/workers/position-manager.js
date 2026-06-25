@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import * as drift from '../services/drift.js';
+import * as perps from '../services/jupiter-perps.js';
 import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { retry } from '../utils/helpers.js';
@@ -11,7 +11,7 @@ import { retry } from '../utils/helpers.js';
  *
  * Logic:
  *   1. Check if we have accumulated SOL in the position fund (from fee splits).
- *   2. If so, open or add to an existing long position on Drift.
+ *   2. If so, open or add to an existing long position on Jupiter Perps.
  *   3. Apply risk limits: reserve cash buffer, max position cap.
  *   4. Take profit if PnL exceeds configurable threshold.
  *   5. Reduce position if drawdown triggers hit.
@@ -41,20 +41,21 @@ export async function managePositionForToken(mint) {
     const reserveAmount = availableToDeployRaw * config.RISK.reservePct;
     const availableToDeploy = Math.max(0, availableToDeployRaw - reserveAmount);
 
-    // Get the Drift market index for this token's underlying
-    const marketIndex = token.driftMarketIndex
-      ?? config.DRIFT_MARKET_INDICES[token.underlying]
-      ?? null;
+    // Resolve market — Jupiter Perps uses asset symbols (SOL, BTC, ETH)
+    const underlying = token.underlying?.toUpperCase();
+    const market = underlying && config.PERPS_MARKETS.includes(underlying)
+      ? underlying
+      : null;
 
-    if (marketIndex === null || marketIndex === undefined) {
-      logger.warn('No Drift market index for token, skipping', { mint, underlying: token.underlying });
+    if (!market) {
+      logger.warn('No Jupiter Perps market for token, skipping', { mint, underlying: token.underlying });
       return null;
     }
 
     // Check current on-chain position PnL (with retry for RPC reliability)
     const pnlInfo = await retry(
-      () => drift.getPositionPnl(marketIndex),
-      { retries: 2, delayMs: 2000, label: `getPositionPnl(${marketIndex})` }
+      () => perps.getPositionPnl(market),
+      { retries: 2, delayMs: 2000, label: `getPositionPnl(${market})` }
     );
 
     // -----------------------------------------------------------------------
@@ -70,12 +71,13 @@ export async function managePositionForToken(mint) {
         const reducePct = config.RISK.drawdownReducePct;
         logger.warn('Max drawdown hit — reducing position', {
           mint,
+          market,
           drawdownPct: (drawdownPct * 100).toFixed(1) + '%',
           reducePct: (reducePct * 100).toFixed(0) + '%',
         });
 
         const reduceResult = await retry(
-          () => drift.reducePosition(marketIndex, reducePct),
+          () => perps.reducePosition(market, reducePct),
           { retries: 2, delayMs: 3000, label: `reducePosition(drawdown)` }
         );
 
@@ -105,13 +107,14 @@ export async function managePositionForToken(mint) {
         const reducePct = config.RISK.takeProfitReducePct;
         logger.info('Taking profit', {
           mint,
+          market,
           pnl: pnlInfo.pnl,
           profitPct: (profitPct * 100).toFixed(1) + '%',
           reducePct: (reducePct * 100).toFixed(0) + '%',
         });
 
         const reduceResult = await retry(
-          () => drift.reducePosition(marketIndex, reducePct),
+          () => perps.reducePosition(market, reducePct),
           { retries: 2, delayMs: 3000, label: `reducePosition(takeProfit)` }
         );
 
@@ -140,7 +143,6 @@ export async function managePositionForToken(mint) {
     // -----------------------------------------------------------------------
     // Check 4: Max position cap
     // -----------------------------------------------------------------------
-    const totalAfterDeploy = deployedAmount + availableToDeploy;
     const deployAmount = Math.min(availableToDeploy, config.RISK.maxPositionSol - deployedAmount);
 
     if (deployAmount <= 0) {
@@ -162,7 +164,7 @@ export async function managePositionForToken(mint) {
 
     logger.info('Opening/adding to long position', {
       mint,
-      marketIndex,
+      market,
       sizeUsd: sizeUsd.toFixed(2),
       deployingSol: deployAmount.toFixed(6),
       totalDeployed: (deployedAmount + deployAmount).toFixed(6),
@@ -170,15 +172,15 @@ export async function managePositionForToken(mint) {
 
     // Open/add to position with retry
     const result = await retry(
-      () => drift.openLong(marketIndex, sizeUsd),
-      { retries: 2, delayMs: 3000, label: `openLong(${marketIndex})` }
+      () => perps.openLong(market, sizeUsd),
+      { retries: 2, delayMs: 3000, label: `openLong(${market})` }
     );
 
     // Update position record
     await db.setPosition(mint, {
       tokenMint: mint,
       side: 'long',
-      marketIndex,
+      market,
       deployedSol: deployedAmount + deployAmount,
       lastAddSol: deployAmount,
       lastAction: position ? 'add' : 'open',
@@ -187,7 +189,7 @@ export async function managePositionForToken(mint) {
       pnl: pnlInfo.pnl || 0,
     });
 
-    logger.info('Position updated', { mint, action: position ? 'add' : 'open', txSig: result.txSig });
+    logger.info('Position updated', { mint, market, action: position ? 'add' : 'open', txSig: result.txSig });
     return { action: position ? 'add' : 'open', txSig: result.txSig, deployedSol: deployAmount };
   } catch (err) {
     logger.error('Position management failed', { mint, error: err.message, stack: err.stack });
