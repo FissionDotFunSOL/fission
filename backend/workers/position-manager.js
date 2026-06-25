@@ -182,19 +182,27 @@ export async function managePositionForToken(mint) {
       logger.warn('Could not fetch SOL price, skipping position management', { mint });
       return null;
     }
-    const sizeUsd = deployAmount * solPrice;
+
+    // Calculate leveraged position size
+    // deployAmount = collateral in SOL
+    // sizeUsd = collateralUsd * leverage (what the position is worth after leverage)
+    const collateralUsd = deployAmount * solPrice;
+    const leverage = config.RISK.leverage || 2.0;
+    const sizeUsd = collateralUsd * leverage;
 
     logger.info('Opening/adding to long position', {
       mint,
       market,
+      leverage: `${leverage}x`,
+      collateralSol: deployAmount.toFixed(6),
+      collateralUsd: collateralUsd.toFixed(2),
       sizeUsd: sizeUsd.toFixed(2),
-      deployingSol: deployAmount.toFixed(6),
       totalDeployed: (deployedAmount + deployAmount).toFixed(6),
     });
 
-    // Open/add to position with retry
+    // Open/add to position with retry — pass collateral explicitly
     const result = await retry(
-      () => perps.openLong(market, sizeUsd),
+      () => perps.openLong(market, sizeUsd, deployAmount),
       { retries: 2, delayMs: 3000, label: `openLong(${market})` }
     );
 

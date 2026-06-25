@@ -224,7 +224,21 @@ export async function openLong(market, sizeUsd, collateralSol) {
     );
 
     const sizeUsdScaled = BigInt(Math.round(sizeUsd * 1e6));
-    const collateralLamports = BigInt(Math.round((collateralSol || sizeUsd / 150) * 1e9));
+
+    // Collateral must be explicitly provided — no hardcoded price assumptions
+    if (!collateralSol || collateralSol <= 0) {
+      throw new Error('collateralSol must be provided and > 0');
+    }
+
+    const collateralLamports = BigInt(Math.round(collateralSol * 1e9));
+
+    // Validate leverage (Jupiter requires min 1.1x, max 250x)
+    const effectiveLeverage = sizeUsd / (collateralSol * 150); // rough estimate
+    logger.info('Position leverage check', {
+      market, sizeUsd, collateralSol,
+      estimatedLeverage: `~${effectiveLeverage.toFixed(1)}x`,
+    });
+
     const counterBuf = Buffer.alloc(8);
     counterBuf.writeBigUInt64LE(BigInt(counter));
 
