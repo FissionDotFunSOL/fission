@@ -8,7 +8,7 @@ import { getAllTokens } from '../db/firebase.js';
 /**
  * Execute buyback for FISSION protocol token using creator fee allocations.
  *
- * 20% of ALL creator token fees are allocated to buying back the FISSION
+ * 30% of ALL creator token fees are allocated to buying back the FISSION
  * protocol token. This creates constant buy pressure on FISSION from every
  * token launched on the platform.
  *

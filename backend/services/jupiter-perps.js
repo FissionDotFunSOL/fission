@@ -93,6 +93,33 @@ function derivePerpetualsPDA() {
 // Read position from on-chain account
 // ---------------------------------------------------------------------------
 
+/**
+ * Get current position data for a given market.
+ *
+ * Jupiter Perps Position account layout (Borsh packed, no padding):
+ *   Offset  Field                    Type     Size
+ *   0       discriminator            [u8;8]   8
+ *   8       owner                    pubkey   32
+ *   40      pool                     pubkey   32
+ *   72      custody                  pubkey   32
+ *   104     collateralCustody        pubkey   32
+ *   136     openTime                 i64      8
+ *   144     updateTime               i64      8
+ *   152     side                     u8       1  (0=Long, 1=Short)
+ *   153     price                    u64      8  (entry price, scaled 1e6)
+ *   161     sizeUsd                  u64      8  (position size after leverage, scaled 1e6)
+ *   169     collateralUsd            u64      8  (collateral after fees, scaled 1e6)
+ *   177     realisedPnlUsd           i64      8  (realised PnL from partial closes, scaled 1e6)
+ *   185     cumulativeInterestSnap   u128     16
+ *   201     lockedAmount             u64      8
+ *   209     bump                     u8       1
+ *
+ * NOTE: realisedPnlUsd is REALISED (from partial closes), NOT unrealised.
+ * Unrealised PnL must be calculated from current price vs entry price.
+ * Since we don't have current price in the position account, we return
+ * realisedPnlUsd and flag it. The risk manager should use getSolPrice()
+ * separately for unrealised PnL estimation.
+ */
 export async function getPositionPnl(market) {
   try {
     if (!config.protocolKeypair) {
@@ -114,32 +141,50 @@ export async function getPositionPnl(market) {
 
     const data = accountInfo.data;
 
-    if (data.length < 186) {
+    // Minimum: 8 (disc) + 32*4 (pubkeys) + 8*2 (times) + 1 (side) + 8*4 (price/size/coll/rpnl) = 209
+    if (data.length < 185) {
       logger.warn('Position account data too short', { market, length: data.length });
       return { exists: true, pnl: 0, size: 0, entry: 0, market };
     }
 
-    const side = data[152];
+    // Side enum: 0 = Long, 1 = Short (Anchor/Borsh convention)
+    const sideRaw = data[152];
+    const isLong = sideRaw === 0;
+
     const entryPrice = Number(data.readBigUInt64LE(153)) / 1e6;
     const sizeUsd = Number(data.readBigUInt64LE(161)) / 1e6;
     const collateralUsd = Number(data.readBigUInt64LE(169)) / 1e6;
 
-    let unrealizedPnl = 0;
+    // This is REALISED PnL (from partial closes), not current unrealised PnL
+    let realisedPnlUsd = 0;
     if (data.length >= 185) {
-      unrealizedPnl = Number(data.readBigInt64LE(177)) / 1e6;
+      realisedPnlUsd = Number(data.readBigInt64LE(177)) / 1e6;
     }
 
-    const sizeDirection = side === 1 ? 1 : -1;
+    // A sizeUsd of 0 means the position is closed
+    if (sizeUsd === 0) {
+      return { exists: false, pnl: realisedPnlUsd, size: 0, entry: 0 };
+    }
+
+    const sizeDirection = isLong ? 1 : -1;
 
     logger.debug('Position read', {
-      market, side: side === 1 ? 'LONG' : 'SHORT',
-      entryPrice, sizeUsd, collateralUsd, unrealizedPnl,
+      market,
+      side: isLong ? 'LONG' : 'SHORT',
+      entryPrice,
+      sizeUsd,
+      collateralUsd,
+      realisedPnlUsd,
     });
 
     return {
-      exists: true, pnl: unrealizedPnl, size: sizeUsd * sizeDirection,
-      entry: entryPrice, collateral: collateralUsd, market,
-      side: side === 1 ? 'long' : 'short',
+      exists: true,
+      pnl: realisedPnlUsd,
+      size: sizeUsd * sizeDirection,
+      entry: entryPrice,
+      collateral: collateralUsd,
+      market,
+      side: isLong ? 'long' : 'short',
     };
   } catch (err) {
     logger.error('getPositionPnl failed', { market, error: err.message });
@@ -188,7 +233,7 @@ export async function openLong(market, sizeUsd, collateralSol) {
     paramsBuf.writeBigUInt64LE(BigInt(0), 8);              // acceptable_price = market
     paramsBuf.writeBigUInt64LE(collateralLamports, 16);
     paramsBuf.writeBigUInt64LE(BigInt(counter), 24);
-    paramsBuf.writeUint8(1, 32);                            // side = Long
+    paramsBuf.writeUint8(0, 32);                            // side = Long (0=Long, 1=Short)
 
     const ixData = Buffer.concat([DISC_INCREASE, paramsBuf]);
 
