@@ -24,6 +24,9 @@ const PROTOCOL_PUBKEY = new PublicKey(
 // ---------------------------------------------------------------------------
 const PUMP_FEES_PROGRAM_ID = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
 
+// Fission protocol token — 20% of ALL creator fees buy this back
+const FISSION_TOKEN_MINT = process.env.FISSION_TOKEN_MINT || '';
+
 // ---------------------------------------------------------------------------
 // Fee split percentages
 // ---------------------------------------------------------------------------
@@ -89,6 +92,7 @@ const config = {
   protocolKeypair,
   PROTOCOL_PUBKEY,
   PUMP_FEES_PROGRAM_ID,
+  FISSION_TOKEN_MINT,
   FEE_SPLIT,
   RISK,
   INTERVALS,

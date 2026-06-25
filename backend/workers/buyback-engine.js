@@ -1,22 +1,32 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import { swapSolForToken, burnTokens } from '../services/jupiter.js';
-import { getTokenBalance } from '../services/solana.js';
+import { swapSolForToken } from '../services/jupiter.js';
 import { getAllTokens } from '../db/firebase.js';
 
 /**
- * Execute buyback & burn for a single token.
+ * Execute buyback for FISSION protocol token using creator fee allocations.
  *
- * 1. Sum up unspent buyback allocation from splits.
- * 2. Swap SOL → derivative token via Jupiter.
- * 3. Burn the received tokens.
- * 4. Record buyback in Firestore.
+ * 20% of ALL creator token fees are allocated to buying back the FISSION
+ * protocol token. This creates constant buy pressure on FISSION from every
+ * token launched on the platform.
+ *
+ * Flow:
+ *   1. Sum up unspent buyback allocations across all tokens.
+ *   2. Swap SOL → FISSION via Jupiter.
+ *   3. Hold FISSION in the protocol wallet (or burn — configurable later).
+ *   4. Record buyback in Firestore.
  */
-export async function buybackAndBurn(mint) {
-  logger.info('Starting buyback & burn', { mint });
+export async function buybackFission(mint) {
+  logger.info('Starting FISSION buyback', { sourceMint: mint });
 
   try {
+    // Check FISSION token is configured
+    if (!config.FISSION_TOKEN_MINT) {
+      logger.debug('FISSION_TOKEN_MINT not set — buyback skipped (set in .env when token is launched)');
+      return null;
+    }
+
     const token = await db.getToken(mint);
     if (!token || token.status !== 'active') {
       logger.warn('Token not active, skipping buyback', { mint });
@@ -38,56 +48,46 @@ export async function buybackAndBurn(mint) {
       return null;
     }
 
-    logger.info('Executing buyback swap', { mint, solAmount: availableSol });
-
-    // Step 1: Swap SOL → token via Jupiter
-    const swapResult = await swapSolForToken(mint, availableSol);
-
-    // Step 2: Check token balance after swap
-    const tokenBalance = await getTokenBalance(
-      config.protocolKeypair.publicKey,
-      mint,
-    );
-
-    if (tokenBalance <= 0) {
-      logger.warn('No tokens received from swap', { mint });
-      return null;
-    }
-
-    // Step 3: Burn all received tokens
-    const burnSig = await burnTokens(mint, tokenBalance, token.decimals || 6);
-
-    // Step 4: Record buyback
-    const buybackId = await db.addBuyback({
-      tokenMint: mint,
-      amountSol: availableSol,
-      tokensBurned: tokenBalance,
-      swapTxSig: swapResult.signature,
-      burnTxSig: burnSig,
+    logger.info('Executing FISSION buyback swap', {
+      sourceMint: mint,
+      solAmount: availableSol,
+      targetMint: config.FISSION_TOKEN_MINT,
     });
 
-    logger.info('Buyback & burn completed', {
-      mint,
+    // Swap SOL → FISSION via Jupiter
+    const swapResult = await swapSolForToken(config.FISSION_TOKEN_MINT, availableSol);
+
+    // Record buyback
+    const buybackId = await db.addBuyback({
+      tokenMint: mint,
+      targetMint: config.FISSION_TOKEN_MINT,
       amountSol: availableSol,
-      tokensBurned: tokenBalance,
+      tokensReceived: swapResult.outputAmount || 0,
+      swapTxSig: swapResult.signature,
+      type: 'fission-buyback',
+    });
+
+    logger.info('FISSION buyback completed', {
+      sourceMint: mint,
+      amountSol: availableSol,
+      tokensReceived: swapResult.outputAmount || 0,
       buybackId,
     });
 
     return {
       buybackId,
       amountSol: availableSol,
-      tokensBurned: tokenBalance,
+      tokensReceived: swapResult.outputAmount || 0,
       swapTxSig: swapResult.signature,
-      burnTxSig: burnSig,
     };
   } catch (err) {
-    logger.error('Buyback & burn failed', { mint, error: err.message, stack: err.stack });
+    logger.error('FISSION buyback failed', { mint, error: err.message, stack: err.stack });
     return null;
   }
 }
 
 /**
- * Run buyback & burn for ALL active tokens.
+ * Run FISSION buyback for ALL active tokens.
  */
 export async function buybackAllTokens() {
   const tokens = await getAllTokens();
@@ -98,12 +98,17 @@ export async function buybackAllTokens() {
     return [];
   }
 
+  if (!config.FISSION_TOKEN_MINT) {
+    logger.info('FISSION_TOKEN_MINT not configured — buyback engine idle');
+    return [];
+  }
+
   const results = [];
   for (const token of active) {
-    const result = await buybackAndBurn(token.id || token.mint);
+    const result = await buybackFission(token.id || token.mint);
     if (result) results.push({ mint: token.id || token.mint, ...result });
   }
 
-  logger.info(`Buyback cycle complete: ${results.length}/${active.length}`);
+  logger.info(`FISSION buyback cycle complete: ${results.length}/${active.length}`);
   return results;
 }
