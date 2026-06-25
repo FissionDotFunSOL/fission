@@ -12,7 +12,7 @@ let derivativeName = '';
 let selectedDirection = 'long';
 
 export function initLauncher() {
-  const wizard = document.querySelector('.launch-wizard');
+  const wizard = document.getElementById('launch-wizard');
   if (!wizard) return;
 
   renderPopularTokens();
