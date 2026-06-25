@@ -31,10 +31,8 @@ const FISSION_TOKEN_MINT = process.env.FISSION_TOKEN_MINT || '';
 // Fee split percentages
 // ---------------------------------------------------------------------------
 const FEE_SPLIT = {
-  positionFund: 0.6,   // 60 %
-  buyback:      0.2,   // 20 %
-  revenue:      0.1,   // 10 %
-  ecosystem:    0.1,   // 10 %
+  positionFund: 0.7,   // 70 % → perps (profits → buyback & burn creator token)
+  buyback:      0.3,   // 30 % → buyback & burn FISSION protocol token
 };
 
 // ---------------------------------------------------------------------------

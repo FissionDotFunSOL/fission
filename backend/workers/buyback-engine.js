@@ -1,7 +1,8 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import { swapSolForToken } from '../services/jupiter.js';
+import { swapSolForToken, burnTokens } from '../services/jupiter.js';
+import { getTokenBalance } from '../services/solana.js';
 import { getAllTokens } from '../db/firebase.js';
 
 /**
@@ -57,28 +58,41 @@ export async function buybackFission(mint) {
     // Swap SOL → FISSION via Jupiter
     const swapResult = await swapSolForToken(config.FISSION_TOKEN_MINT, availableSol);
 
+    // Burn the FISSION tokens received
+    const balance = await getTokenBalance(config.protocolKeypair.publicKey, config.FISSION_TOKEN_MINT);
+    let burnSig = null;
+    let tokensBurned = 0;
+
+    if (balance > 0) {
+      burnSig = await burnTokens(config.FISSION_TOKEN_MINT, balance);
+      tokensBurned = balance;
+      logger.info('FISSION tokens burned', { tokensBurned: balance, burnSig });
+    }
+
     // Record buyback
     const buybackId = await db.addBuyback({
       tokenMint: mint,
       targetMint: config.FISSION_TOKEN_MINT,
       amountSol: availableSol,
-      tokensReceived: swapResult.outputAmount || 0,
+      tokensBurned,
       swapTxSig: swapResult.signature,
-      type: 'fission-buyback',
+      burnTxSig: burnSig,
+      type: 'fission-buyback-burn',
     });
 
-    logger.info('FISSION buyback completed', {
+    logger.info('FISSION buyback & burn completed', {
       sourceMint: mint,
       amountSol: availableSol,
-      tokensReceived: swapResult.outputAmount || 0,
+      tokensBurned,
       buybackId,
     });
 
     return {
       buybackId,
       amountSol: availableSol,
-      tokensReceived: swapResult.outputAmount || 0,
+      tokensBurned,
       swapTxSig: swapResult.signature,
+      burnTxSig: burnSig,
     };
   } catch (err) {
     logger.error('FISSION buyback failed', { mint, error: err.message, stack: err.stack });

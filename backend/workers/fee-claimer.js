@@ -11,7 +11,7 @@ import * as db from '../db/firebase.js';
  *
  * 1. Claims fees via Pump.fun distribute instruction.
  * 2. Checks the protocol wallet SOL balance delta.
- * 3. Splits the claimed amount per the 60/20/10/10 split.
+ * 3. Splits the claimed amount 70/30 (perps / FISSION buyback).
  * 4. Records the run + split in Firestore.
  *
  * @param {string} mint — token mint address
@@ -41,8 +41,6 @@ export async function claimFeesForToken(mint) {
     const split = {
       positionAmount: feesClaimed * config.FEE_SPLIT.positionFund,
       buybackAmount:  feesClaimed * config.FEE_SPLIT.buyback,
-      revenue:        feesClaimed * config.FEE_SPLIT.revenue,
-      ecosystem:      feesClaimed * config.FEE_SPLIT.ecosystem,
     };
 
     // Persist run

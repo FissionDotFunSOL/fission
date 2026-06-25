@@ -3,7 +3,8 @@ import config from '../config.js';
 import * as db from '../db/firebase.js';
 import * as perps from '../services/jupiter-perps.js';
 import { getAllTokens } from '../db/firebase.js';
-import { getSolPrice } from '../services/jupiter.js';
+import { getSolPrice, swapSolForToken, burnTokens } from '../services/jupiter.js';
+import { getTokenBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
 
 /**
@@ -119,16 +120,37 @@ export async function managePositionForToken(mint) {
         );
 
         if (reduceResult) {
+          // Realized profit in SOL — buyback & burn the creator's token
+          const profitSol = (pnlInfo.pnl * reducePct) / (solPrice || 150);
+          let burnResult = null;
+
+          if (profitSol > 0.001) {
+            try {
+              logger.info('Buyback & burn creator token with perp profits', {
+                mint, profitSol: profitSol.toFixed(6),
+              });
+              const swap = await swapSolForToken(mint, profitSol);
+              const bal = await getTokenBalance(config.protocolKeypair.publicKey, mint);
+              if (bal > 0) {
+                const burnSig = await burnTokens(mint, bal);
+                burnResult = { swapSig: swap.signature, burnSig, tokensBurned: bal };
+                logger.info('Perp profit buyback & burn complete', { mint, tokensBurned: bal });
+              }
+            } catch (err) {
+              logger.error('Profit buyback & burn failed', { mint, error: err.message });
+            }
+          }
+
           await db.setPosition(mint, {
             ...position,
             deployedSol: deployedAmount * (1 - reducePct),
-            lastAction: 'take-profit',
+            lastAction: 'take-profit-buyback-burn',
             lastActionAt: Date.now(),
             pnl: pnlInfo.pnl,
             realizedProfit: (position?.realizedProfit || 0) + (pnlInfo.pnl * reducePct),
           });
         }
-        return { action: 'take-profit', profitPct, txSig: reduceResult?.txSig };
+        return { action: 'take-profit-buyback-burn', profitPct, txSig: reduceResult?.txSig };
       }
     }
 
