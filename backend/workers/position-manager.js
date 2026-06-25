@@ -187,12 +187,16 @@ export async function managePositionForToken(mint) {
     // deployAmount = collateral in SOL
     // sizeUsd = collateralUsd * leverage (what the position is worth after leverage)
     const collateralUsd = deployAmount * solPrice;
-    const leverage = config.RISK.leverage || 2.0;
+    const leverage = config.RISK.leverage || 100;
     const sizeUsd = collateralUsd * leverage;
 
-    logger.info('Opening/adding to long position', {
+    // Token can be configured as long or short
+    const direction = token.side || 'long';
+
+    logger.info('Opening/adding to position', {
       mint,
       market,
+      direction,
       leverage: `${leverage}x`,
       collateralSol: deployAmount.toFixed(6),
       collateralUsd: collateralUsd.toFixed(2),
@@ -200,18 +204,21 @@ export async function managePositionForToken(mint) {
       totalDeployed: (deployedAmount + deployAmount).toFixed(6),
     });
 
-    // Open/add to position with retry — pass collateral explicitly
+    // Open/add to position with retry — pass collateral + direction
     const result = await retry(
-      () => perps.openLong(market, sizeUsd, deployAmount),
-      { retries: 2, delayMs: 3000, label: `openLong(${market})` }
+      () => perps.openPosition(market, sizeUsd, deployAmount, direction),
+      { retries: 2, delayMs: 3000, label: `openPosition(${market}, ${direction})` }
     );
 
     // Update position record
     await db.setPosition(mint, {
       tokenMint: mint,
-      side: 'long',
+      side: direction,
       market,
+      leverage,
       deployedSol: deployedAmount + deployAmount,
+      collateralUsd: (deployedAmount + deployAmount) * (solPrice || 150),
+      sizeUsd,
       lastAddSol: deployAmount,
       lastAction: position ? 'add' : 'open',
       lastActionAt: Date.now(),
@@ -219,7 +226,7 @@ export async function managePositionForToken(mint) {
       pnl: pnlInfo.pnl || 0,
     });
 
-    logger.info('Position updated', { mint, market, action: position ? 'add' : 'open', txSig: result.txSig });
+    logger.info('Position updated', { mint, market, direction, action: position ? 'add' : 'open', txSig: result.txSig });
     return { action: position ? 'add' : 'open', txSig: result.txSig, deployedSol: deployAmount };
   } catch (err) {
     logger.error('Position management failed', { mint, error: err.message, stack: err.stack });

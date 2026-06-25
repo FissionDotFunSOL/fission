@@ -9,6 +9,7 @@ import { showToast } from './toast.js';
 let currentStep = 0;
 let selectedToken = null;
 let derivativeName = '';
+let selectedDirection = 'long';
 
 export function initLauncher() {
   const wizard = document.querySelector('.launch-wizard');
@@ -20,6 +21,7 @@ export function initLauncher() {
   setupTokenSearch();
   setupNameInput();
   setupProtocolWallet();
+  setupDirectionSelector();
   updateStepUI();
 }
 
@@ -162,6 +164,7 @@ async function handleVerifyAndRegister() {
       body: JSON.stringify({
         mint: address,
         underlying: selectedToken || null,
+        side: selectedDirection,
       }),
     });
 
@@ -325,5 +328,41 @@ function updateStepUI() {
 
   document.querySelectorAll('.wizard-panel').forEach((panel, i) => {
     panel.classList.toggle('active', i === currentStep);
+  });
+}
+
+function setupDirectionSelector() {
+  const longBtn = document.getElementById('dir-long');
+  const shortBtn = document.getElementById('dir-short');
+  const dirLabel = document.getElementById('selected-direction');
+
+  if (!longBtn || !shortBtn) return;
+
+  longBtn.addEventListener('click', () => {
+    selectedDirection = 'long';
+    longBtn.classList.add('active');
+    longBtn.classList.remove('btn-outline');
+    longBtn.classList.add('btn-primary');
+    shortBtn.classList.remove('active');
+    shortBtn.classList.remove('btn-primary');
+    shortBtn.classList.add('btn-outline');
+    if (dirLabel) {
+      dirLabel.textContent = 'LONG';
+      dirLabel.style.color = 'var(--green, #00ff88)';
+    }
+  });
+
+  shortBtn.addEventListener('click', () => {
+    selectedDirection = 'short';
+    shortBtn.classList.add('active');
+    shortBtn.classList.remove('btn-outline');
+    shortBtn.classList.add('btn-primary');
+    longBtn.classList.remove('active');
+    longBtn.classList.remove('btn-primary');
+    longBtn.classList.add('btn-outline');
+    if (dirLabel) {
+      dirLabel.textContent = 'SHORT';
+      dirLabel.style.color = 'var(--red, #ff3366)';
+    }
   });
 }

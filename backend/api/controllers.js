@@ -55,7 +55,7 @@ export async function getToken(req, res) {
  */
 export async function registerToken(req, res) {
   try {
-    const { mint, underlying } = req.body;
+    const { mint, underlying, side } = req.body;
 
     // ── Input validation ──
     if (!mint || typeof mint !== 'string') {
@@ -90,6 +90,16 @@ export async function registerToken(req, res) {
       }
     }
 
+    // Validate side if provided (long or short)
+    const validSides = ['long', 'short'];
+    const tokenSide = (side || 'long').toLowerCase().trim();
+    if (!validSides.includes(tokenSide)) {
+      return res.status(400).json({
+        error: 'Invalid side',
+        reason: 'side must be "long" or "short"',
+      });
+    }
+
     // ── Check if already registered ──
     const existing = await db.getToken(trimmedMint);
     if (existing) {
@@ -118,6 +128,8 @@ export async function registerToken(req, res) {
       mint: trimmedMint,
       underlying: underlyingSymbol,
       perpsMarket,
+      side: tokenSide,
+      leverage: config.RISK.leverage,
       sharingConfigPDA: verification.pda,
       createdAt: Date.now(),
       status: 'active',
@@ -128,6 +140,7 @@ export async function registerToken(req, res) {
       mint: trimmedMint,
       underlying: underlyingSymbol,
       perpsMarket,
+      side: tokenSide,
       pda: verification.pda,
     });
 

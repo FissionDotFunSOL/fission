@@ -193,30 +193,40 @@ export async function getPositionPnl(market) {
 }
 
 // ---------------------------------------------------------------------------
-// Open / Increase a long position
+// Open / Increase a position (LONG or SHORT)
 // ---------------------------------------------------------------------------
 
-export async function openLong(market, sizeUsd, collateralSol) {
+/**
+ * Open or add to a position on Jupiter Perps.
+ *
+ * @param {string} market — asset symbol (SOL, BTC, ETH)
+ * @param {number} sizeUsd — total position size in USD (after leverage)
+ * @param {number} collateralSol — collateral amount in SOL
+ * @param {'long'|'short'} side — position direction
+ */
+export async function openPosition(market, sizeUsd, collateralSol, side = 'long') {
   try {
     if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
     const custodyKey = CUSTODY_ACCOUNTS[market];
     if (!custodyKey) throw new Error(`Unsupported market: ${market}`);
 
-    const conn = getConnection();
     const wallet = config.protocolKeypair.publicKey;
-    const collateralCustody = CUSTODY_ACCOUNTS['SOL'];
     const oracleKey = CUSTODY_ORACLES[market];
-
     if (!oracleKey) throw new Error(`No oracle configured for market: ${market}`);
+
+    // For longs: collateral is the underlying or SOL
+    // For shorts: collateral should be USDC, but we deposit SOL and let Jupiter handle it
+    const collateralCustody = side === 'short' ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
+    const collateralMint = side === 'short' ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
 
     const positionPDA = derivePositionPDA(wallet, custodyKey);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Date.now();
     const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
 
-    const fundingATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], wallet);
-    const positionRequestATA = await getAssociatedTokenAddress(COLLATERAL_MINTS['SOL'], positionRequestPDA, true);
+    const fundingATA = await getAssociatedTokenAddress(collateralMint, wallet);
+    const positionRequestATA = await getAssociatedTokenAddress(collateralMint, positionRequestPDA, true);
 
     const [custodyTokenAccount] = PublicKey.findProgramAddressSync(
       [Buffer.from('custody_token_account'), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
@@ -225,29 +235,24 @@ export async function openLong(market, sizeUsd, collateralSol) {
 
     const sizeUsdScaled = BigInt(Math.round(sizeUsd * 1e6));
 
-    // Collateral must be explicitly provided — no hardcoded price assumptions
     if (!collateralSol || collateralSol <= 0) {
       throw new Error('collateralSol must be provided and > 0');
     }
 
     const collateralLamports = BigInt(Math.round(collateralSol * 1e9));
+    const sideEnum = side === 'short' ? 1 : 0; // 0=Long, 1=Short
 
-    // Validate leverage (Jupiter requires min 1.1x, max 250x)
-    const effectiveLeverage = sizeUsd / (collateralSol * 150); // rough estimate
-    logger.info('Position leverage check', {
-      market, sizeUsd, collateralSol,
-      estimatedLeverage: `~${effectiveLeverage.toFixed(1)}x`,
+    logger.info('Opening/increasing position', {
+      market, side, sizeUsd, collateralSol,
+      leverage: `${(sizeUsd / (collateralSol * 150)).toFixed(0)}x (est)`,
     });
-
-    const counterBuf = Buffer.alloc(8);
-    counterBuf.writeBigUInt64LE(BigInt(counter));
 
     const paramsBuf = Buffer.alloc(41);
     paramsBuf.writeBigUInt64LE(sizeUsdScaled, 0);
     paramsBuf.writeBigUInt64LE(BigInt(0), 8);              // acceptable_price = market
     paramsBuf.writeBigUInt64LE(collateralLamports, 16);
     paramsBuf.writeBigUInt64LE(BigInt(counter), 24);
-    paramsBuf.writeUint8(0, 32);                            // side = Long (0=Long, 1=Short)
+    paramsBuf.writeUint8(sideEnum, 32);                    // side
 
     const ixData = Buffer.concat([DISC_INCREASE, paramsBuf]);
 
@@ -272,17 +277,22 @@ export async function openLong(market, sizeUsd, collateralSol) {
       data: ixData,
     };
 
-    logger.info('Jupiter Perps: opening/increasing long', {
-      market, sizeUsd, positionPDA: positionPDA.toBase58(),
-    });
-
     const sig = await sendTx([ix], [config.protocolKeypair]);
-    logger.info('Jupiter Perps: position request submitted', { market, sizeUsd, txSig: sig });
+    logger.info('Position request submitted', { market, side, sizeUsd, txSig: sig });
     return { txSig: sig };
   } catch (err) {
-    logger.error('openLong failed', { market, sizeUsd, error: err.message });
+    logger.error('openPosition failed', { market, side, sizeUsd, error: err.message });
     throw err;
   }
+}
+
+// Backwards-compatible aliases
+export async function openLong(market, sizeUsd, collateralSol) {
+  return openPosition(market, sizeUsd, collateralSol, 'long');
+}
+
+export async function openShort(market, sizeUsd, collateralSol) {
+  return openPosition(market, sizeUsd, collateralSol, 'short');
 }
 
 // ---------------------------------------------------------------------------

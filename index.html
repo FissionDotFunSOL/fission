@@ -222,15 +222,16 @@
             <tr>
               <th>Token</th>
               <th>Underlying</th>
-              <th>Fees Claimed</th>
-              <th>Position</th>
+              <th>Direction</th>
+              <th>Leverage</th>
+              <th>Entry</th>
               <th>PnL</th>
-              <th>Burned</th>
+              <th>Size</th>
             </tr>
           </thead>
           <tbody id="dashboard-body">
             <tr>
-              <td colspan="6" class="empty-state">
+              <td colspan="7" class="empty-state">
                 No tokens registered yet. Be the first to launch.
               </td>
             </tr>
@@ -265,12 +266,25 @@
 
         <!-- Step 1 -->
         <div class="wizard-panel active" id="wizard-step-1">
-          <h3 class="wizard-panel-title">Pick Underlying</h3>
+          <h3 class="wizard-panel-title">Pick Underlying & Direction</h3>
           <p class="wizard-panel-desc">
-            Choose the asset your derivative will track. This determines which perp market the engine trades.
+            Choose the asset and whether to go LONG (price up = profit) or SHORT (price down = profit). Max leverage. Max aggression.
           </p>
           <input type="text" id="token-search" class="input" placeholder="Search tokens..." />
           <div class="token-grid" id="popular-tokens-grid"></div>
+
+          <div class="direction-selector" style="margin-top:24px;display:flex;gap:12px;">
+            <button class="btn btn-primary direction-btn active" id="dir-long" data-direction="long" style="flex:1;font-family:'JetBrains Mono',monospace;">
+              ▲ LONG
+            </button>
+            <button class="btn btn-outline direction-btn" id="dir-short" data-direction="short" style="flex:1;font-family:'JetBrains Mono',monospace;">
+              ▼ SHORT
+            </button>
+          </div>
+          <p style="margin-top:8px;font-size:0.75rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">
+            Selected: <span id="selected-direction" style="color:var(--accent);">LONG</span> @ <span id="selected-leverage" style="color:var(--accent);">100x</span> leverage
+          </p>
+
           <div class="wizard-nav">
             <div></div>
             <button class="btn btn-primary btn-sm" data-wizard-next>NEXT</button>
@@ -416,32 +430,48 @@
         <button class="modal-close" id="modal-close" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="modal-stats-grid">
+        <!-- Direction Banner -->
+        <div id="modal-direction-banner" style="padding:12px 16px;border:1px solid var(--accent);border-radius:2px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;font-family:var(--font-mono);">
           <div>
-            <div class="modal-stat-label">Underlying</div>
-            <div class="modal-stat-value" id="modal-underlying">--</div>
+            <span id="modal-direction-arrow" style="font-size:1.5rem;margin-right:8px;">▲</span>
+            <span id="modal-direction-text" style="font-size:1.1rem;font-weight:700;color:var(--accent);">LONG</span>
+            <span id="modal-market-text" style="margin-left:8px;color:var(--text-muted);font-size:0.85rem;">SOL-PERP</span>
           </div>
           <div>
-            <div class="modal-stat-label">Fees Claimed</div>
-            <div class="modal-stat-value" id="modal-fees">--</div>
+            <span style="color:var(--text-muted);font-size:0.75rem;">LEVERAGE</span>
+            <span id="modal-leverage-text" style="color:var(--accent);font-size:1.3rem;font-weight:700;margin-left:6px;">100x</span>
+          </div>
+        </div>
+
+        <!-- Position Stats Grid -->
+        <div class="modal-stats-grid" style="grid-template-columns:1fr 1fr;gap:16px;">
+          <div>
+            <div class="modal-stat-label">Entry Price</div>
+            <div class="modal-stat-value" id="modal-entry" style="font-size:1.3rem;">--</div>
           </div>
           <div>
             <div class="modal-stat-label">Position Size</div>
-            <div class="modal-stat-value" id="modal-position">--</div>
+            <div class="modal-stat-value" id="modal-size" style="font-size:1.3rem;">--</div>
           </div>
           <div>
-            <div class="modal-stat-label">PnL</div>
-            <div class="modal-stat-value" id="modal-pnl">--</div>
+            <div class="modal-stat-label">Collateral</div>
+            <div class="modal-stat-value" id="modal-collateral" style="font-size:1.3rem;">--</div>
           </div>
           <div>
-            <div class="modal-stat-label">Buybacks</div>
-            <div class="modal-stat-value" id="modal-buybacks">--</div>
+            <div class="modal-stat-label">Realised PnL</div>
+            <div class="modal-stat-value" id="modal-pnl" style="font-size:1.3rem;">--</div>
+          </div>
+          <div>
+            <div class="modal-stat-label">Deployed SOL</div>
+            <div class="modal-stat-value" id="modal-deployed">--</div>
           </div>
           <div>
             <div class="modal-stat-label">Status</div>
-            <div class="modal-stat-value" id="modal-engine-text">Active</div>
+            <div class="modal-stat-value" id="modal-engine-text">--</div>
           </div>
         </div>
+
+        <!-- Fee Split -->
         <div style="margin-top:20px;">
           <div class="modal-stat-label" style="margin-bottom:8px;">Fee Split</div>
           <div class="fee-bar">
@@ -452,6 +482,22 @@
             <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);">70% Perps</span>
             <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent-secondary);">30% FISSION</span>
           </div>
+        </div>
+
+        <!-- Available Markets -->
+        <div style="margin-top:20px;">
+          <div class="modal-stat-label" style="margin-bottom:8px;">Available Markets</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;" id="modal-markets">
+            <span style="padding:4px 12px;border:1px solid var(--border);border-radius:2px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">SOL-PERP</span>
+            <span style="padding:4px 12px;border:1px solid var(--border);border-radius:2px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">BTC-PERP</span>
+            <span style="padding:4px 12px;border:1px solid var(--border);border-radius:2px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-muted);">ETH-PERP</span>
+          </div>
+        </div>
+
+        <!-- Mint Address -->
+        <div style="margin-top:20px;">
+          <div class="modal-stat-label" style="margin-bottom:8px;">Mint Address</div>
+          <div style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-muted);word-break:break-all;" id="modal-mint">--</div>
         </div>
       </div>
     </div>

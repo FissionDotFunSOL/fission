@@ -39,18 +39,18 @@ const FEE_SPLIT = {
 // Risk management
 // ---------------------------------------------------------------------------
 const RISK = {
-  maxDrawdownPct:       parseFloat(process.env.MAX_DRAWDOWN_PCT) || 0.40,
-  circuitBreakerPct:    parseFloat(process.env.CIRCUIT_BREAKER_PCT) || 0.50,
-  reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.20,
-  takeProfitPct:        parseFloat(process.env.TAKE_PROFIT_PCT) || 0.30,
-  takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.25,
-  drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.50,
-  minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.01,
-  maxPositionSol:       parseFloat(process.env.MAX_POSITION_SOL) || 100,
-  liquidationWarningPct: parseFloat(process.env.LIQUIDATION_WARNING_PCT) || 0.15,
+  maxDrawdownPct:       parseFloat(process.env.MAX_DRAWDOWN_PCT) || 0.80,
+  circuitBreakerPct:    parseFloat(process.env.CIRCUIT_BREAKER_PCT) || 0.90,
+  reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.0,
+  takeProfitPct:        parseFloat(process.env.TAKE_PROFIT_PCT) || 0.50,
+  takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.30,
+  drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.25,
+  minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.005,
+  maxPositionSol:       parseFloat(process.env.MAX_POSITION_SOL) || 999999,
+  liquidationWarningPct: parseFloat(process.env.LIQUIDATION_WARNING_PCT) || 0.05,
   // Leverage multiplier for perp positions (Jupiter allows 1.1x–250x)
-  // Default 2x: conservative — liquidation requires ~50% price drop
-  leverage:             parseFloat(process.env.LEVERAGE) || 2.0,
+  // Default 100x: maximum aggression — all fees immediately deployed at max leverage
+  leverage:             parseFloat(process.env.LEVERAGE) || 100,
 };
 
 // ---------------------------------------------------------------------------
