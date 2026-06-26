@@ -89,6 +89,75 @@ export async function managePositionForToken(mint) {
       });
     }
 
+    // -----------------------------------------------------------------------
+    // Profit-Taking: reduce position and route to buyback when profitable
+    // Triggers at earlyTakeProfitPct (default 20% gain on deployed capital)
+    // -----------------------------------------------------------------------
+    if (pnlInfo.exists && deployedAmount > 0) {
+      const solPrice = await getSolPrice();
+      const deployedUsd = deployedAmount * (solPrice || 150);
+      const proportionalPnl = position?.pnl || 0;
+
+      // Check if PnL exceeds early take-profit threshold
+      const gainPct = deployedUsd > 0 ? proportionalPnl / deployedUsd : 0;
+      const tpThreshold = config.RISK.earlyTakeProfitPct;
+
+      if (gainPct >= tpThreshold && proportionalPnl > 0) {
+        const reducePct = config.RISK.takeProfitReducePct;
+        logger.info('TAKE PROFIT triggered', {
+          mint,
+          market: market || token.underlying,
+          gainPct: (gainPct * 100).toFixed(1) + '%',
+          threshold: (tpThreshold * 100).toFixed(0) + '%',
+          proportionalPnl: proportionalPnl.toFixed(2),
+          reducePct: (reducePct * 100).toFixed(0) + '%',
+        });
+
+        try {
+          const tpResult = await retry(
+            () => perps.reducePosition(market, reducePct, token.side || 'long'),
+            { retries: 2, delayMs: 3000, label: `takeProfit(${market})` }
+          );
+
+          const newDeployed = deployedAmount * (1 - reducePct);
+          const freedSol = deployedAmount * reducePct;
+
+          // Update position record
+          await db.setPosition(mint, {
+            ...position,
+            tokenMint: mint,
+            deployedSol: newDeployed,
+            lastAction: 'take-profit',
+            lastActionAt: Date.now(),
+            pnl: proportionalPnl * (1 - reducePct),
+          });
+
+          // Record the take-profit as a split so buyback engine picks it up
+          await db.addDoc('splits', {
+            tokenMint: mint,
+            runId: `tp-${Date.now()}`,
+            type: 'take-profit',
+            totalSol: freedSol,
+            positionAmount: 0,
+            buybackAmount: freedSol, // all freed capital goes to buyback
+            timestamp: Date.now(),
+          });
+
+          logger.info('Take profit executed', {
+            mint,
+            market,
+            freedSol: freedSol.toFixed(6),
+            txSig: tpResult?.txSig,
+          });
+
+          // Return early — don't open new position in same cycle as take-profit
+          return { action: 'take-profit', txSig: tpResult?.txSig, freedSol };
+        } catch (err) {
+          logger.error('Take profit failed', { mint, market, error: err.message });
+        }
+      }
+    }
+
     // NOTE: Drawdown, take-profit, and risk checks are handled by risk-manager.js
     // Position-manager only handles opening and adding to positions.
 

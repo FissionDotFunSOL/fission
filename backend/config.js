@@ -43,6 +43,7 @@ const RISK = {
   circuitBreakerPct:    parseFloat(process.env.CIRCUIT_BREAKER_PCT) || 0.90,
   reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.05,
   takeProfitPct:        parseFloat(process.env.TAKE_PROFIT_PCT) || 0.50,
+  earlyTakeProfitPct:   parseFloat(process.env.EARLY_TAKE_PROFIT_PCT) || 0.20,
   takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.30,
   drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.25,
   minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.005,
