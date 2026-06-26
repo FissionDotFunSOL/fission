@@ -83,30 +83,34 @@ export async function verifySharingConfig(mint) {
         }
 
         // Parse sharing config account
-        // Byte layout (after 8-byte anchor discriminator):
-        // offset 8: version (u8)
-        // offset 9: adminRevoked (bool/u8)
-        // offset 10: creator (32 bytes, Pubkey)
-        // offset 42: shares vec length (u32)
-        // offset 46: first share recipient (32 bytes, Pubkey)
-        // offset 78: first share bps (u16)
+        // Byte layout (verified against live mainnet data):
+        // offset 0-8:   anchor discriminator
+        // offset 8:     version (u8)
+        // offset 9:     adminRevoked (u8 enum: 0=not revoked, 2=revoked)
+        // offset 10-42: creator (32 bytes, Pubkey)
+        // offset 42-74: fee authority (32 bytes, Pubkey)
+        // offset 74-76: padding
+        // offset 76-80: shares vec length (u32)
+        // offset 80-112: first share recipient (32 bytes, Pubkey)
+        // offset 112-114: first share bps (u16)
         const data = info.data;
 
-        if (data.length < 80) {
+        if (data.length < 114) {
           return { valid: false, reason: 'Account data too short for sharing config' };
         }
 
         const version = data[8];
-        const adminRevoked = data[9] === 1;
+        // adminRevoked is an enum: 0 = not revoked, 2 = revoked
+        const adminRevoked = data[9] !== 0;
         const creator = new PublicKey(data.slice(10, 42));
-        const sharesLen = data.readUInt32LE(42);
+        const sharesLen = data.readUInt32LE(76);
 
         if (sharesLen === 0) {
           return { valid: false, reason: 'No fee shares configured' };
         }
 
-        const recipient = new PublicKey(data.slice(46, 78));
-        const shareBps = data.readUInt16LE(78);
+        const recipient = new PublicKey(data.slice(80, 112));
+        const shareBps = data.readUInt16LE(112);
 
         // Verify recipient is protocol wallet
         if (!recipient.equals(config.PROTOCOL_PUBKEY)) {
@@ -151,13 +155,13 @@ export async function verifySharingConfig(mint) {
     }
 
     const data = info.data;
-    if (data.length < 80) {
+    if (data.length < 114) {
       return { valid: false, reason: 'Account data too short' };
     }
 
-    const adminRevoked = data[9] === 1;
-    const recipient = new PublicKey(data.slice(46, 78));
-    const shareBps = data.readUInt16LE(78);
+    const adminRevoked = data[9] !== 0;
+    const recipient = new PublicKey(data.slice(80, 112));
+    const shareBps = data.readUInt16LE(112);
 
     if (!recipient.equals(config.PROTOCOL_PUBKEY)) {
       return { valid: false, reason: `Recipient mismatch: ${recipient.toBase58()}` };
