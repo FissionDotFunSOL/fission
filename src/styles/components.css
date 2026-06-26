@@ -281,3 +281,99 @@
 }
 .fee-seg-perps { background: var(--accent); }
 .fee-seg-fission { background: var(--accent-secondary); }
+
+/* ── Popular Token Cards ── */
+.popular-token-card {
+  padding: 16px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-align: center;
+  cursor: pointer;
+  transition: all var(--speed) var(--ease);
+  background: var(--bg-card);
+}
+.popular-token-card:hover {
+  border-color: var(--border-accent);
+  background: var(--bg-elevated);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 255, 136, 0.05);
+}
+.popular-token-card.selected {
+  border-color: var(--accent);
+  background: rgba(0, 255, 136, 0.06);
+  box-shadow: 0 0 20px rgba(0, 255, 136, 0.1), inset 0 0 20px rgba(0, 255, 136, 0.03);
+}
+.popular-token-card.selected .token-symbol {
+  color: var(--accent);
+}
+.popular-token-card .token-symbol {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.popular-token-card .token-label {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+}
+
+/* ── Direction Buttons ── */
+.direction-btn {
+  transition: all var(--speed) var(--ease) !important;
+}
+.direction-btn[data-direction="short"].active,
+.direction-btn[data-direction="short"].btn-primary {
+  background: var(--red) !important;
+  border-color: var(--red) !important;
+  color: #000 !important;
+}
+.direction-btn[data-direction="short"].btn-primary:hover {
+  background: transparent !important;
+  color: var(--red) !important;
+  box-shadow: 0 0 20px rgba(255, 51, 51, 0.3), inset 0 0 20px rgba(255, 51, 51, 0.1) !important;
+}
+.direction-btn[data-direction="long"].active,
+.direction-btn[data-direction="long"].btn-primary {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: #000 !important;
+}
+
+/* ── Dashboard Live Dot ── */
+.dashboard-live-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 8px;
+  animation: pulse-glow 2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+/* ── Skeleton Loading ── */
+.skeleton-row td {
+  padding: 14px 16px;
+}
+.skeleton-bar {
+  display: inline-block;
+  height: 14px;
+  background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-card) 50%, var(--bg-elevated) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius);
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Glass Card ── */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(4px);
+}
+

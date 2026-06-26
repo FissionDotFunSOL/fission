@@ -155,15 +155,10 @@ function renderTable() {
   if (data.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7">
-          <div class="dashboard-empty">
-            <div class="dashboard-empty-icon">0</div>
-            <div class="dashboard-empty-title">No derivatives yet</div>
-            <div class="dashboard-empty-desc">
-              Be the first to launch a Fission derivative.
-            </div>
-            <a href="#launch" class="btn btn-primary btn-sm">LAUNCH</a>
-          </div>
+        <td colspan="7" style="text-align:center;padding:60px 20px;">
+          <div style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-tertiary);margin-bottom:8px;">No derivatives yet</div>
+          <div style="font-size:0.8rem;color:var(--text-tertiary);margin-bottom:20px;">Be the first to launch a Fission derivative.</div>
+          <a href="#launch" class="btn btn-primary btn-sm">LAUNCH</a>
         </td>
       </tr>
     `;
