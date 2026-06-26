@@ -1,5 +1,11 @@
 import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  getAssociatedTokenAddress,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createSyncNativeInstruction,
+} from '@solana/spl-token';
 import { createRequire } from 'module';
 import crypto from 'crypto';
 import config from '../config.js';
@@ -252,6 +258,28 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
       market, side, sizeUsd, collateralSol,
     });
 
+    // Setup instructions: create wSOL ATA + fund it
+    const setupIxs = [];
+
+    if (!isShort) {
+      // For long SOL: create wSOL ATA if needed, transfer SOL, sync native
+      setupIxs.push(
+        createAssociatedTokenAccountIdempotentInstruction(
+          wallet, fundingATA, wallet, collateralMint,
+        ),
+      );
+      setupIxs.push(
+        SystemProgram.transfer({
+          fromPubkey: wallet,
+          toPubkey: fundingATA,
+          lamports: collateralAmount,
+        }),
+      );
+      setupIxs.push(
+        createSyncNativeInstruction(fundingATA),
+      );
+    }
+
     // Borsh-serialize params:
     // sizeUsdDelta: u64, collateralTokenDelta: u64, side: u8,
     // priceSlippage: u64, jupiterMinimumOut: Option<u64> (0=None), counter: u64
@@ -289,7 +317,7 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
       data: ixData,
     };
 
-    const sig = await sendTx([ix], [config.protocolKeypair]);
+    const sig = await sendTx([...setupIxs, ix], [config.protocolKeypair]);
     logger.info('Position request submitted', { market, side, sizeUsd, txSig: sig });
     return { txSig: sig };
   } catch (err) {
