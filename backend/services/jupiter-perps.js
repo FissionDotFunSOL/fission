@@ -27,7 +27,7 @@ const JUP_PERPS_PROGRAM_ID = new PublicKey(
 );
 
 const JLP_POOL = new PublicKey(
-  config.JLP_POOL_ADDRESS || '2ve5JwfyDUw8kULb2oHM9iDvS683QCJTsa8tTSgpcnqM'
+  config.JLP_POOL_ADDRESS || '5BUwFW4nRbftYTDMbgxykoFWqWHPzahFSNAaaaJtVKsq'
 );
 
 // Custody accounts for supported assets (mainnet)
