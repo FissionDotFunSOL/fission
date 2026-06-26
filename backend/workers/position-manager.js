@@ -132,14 +132,29 @@ export async function managePositionForToken(mint) {
             pnl: proportionalPnl * (1 - reducePct),
           });
 
-          // Record the take-profit as a split so buyback engine picks it up
+          // Record take-profit splits: 70% → source token buyback, 30% → FISSION buyback
+          const sourceTokenSol = freedSol * config.PROFIT_SPLIT.sourceToken;
+          const fissionSol = freedSol * config.PROFIT_SPLIT.fission;
+
           await db.addDoc('splits', {
             tokenMint: mint,
             runId: `tp-${Date.now()}`,
-            type: 'take-profit',
-            totalSol: freedSol,
+            type: 'take-profit-source',
+            totalSol: sourceTokenSol,
             positionAmount: 0,
-            buybackAmount: freedSol, // all freed capital goes to buyback
+            buybackAmount: 0,
+            sourceTokenBuyback: sourceTokenSol, // 70% → buy back this token
+            timestamp: Date.now(),
+          });
+
+          await db.addDoc('splits', {
+            tokenMint: mint,
+            runId: `tp-fission-${Date.now()}`,
+            type: 'take-profit-fission',
+            totalSol: fissionSol,
+            positionAmount: 0,
+            buybackAmount: fissionSol, // 30% → buy back FISSION
+            sourceTokenBuyback: 0,
             timestamp: Date.now(),
           });
 

@@ -35,6 +35,12 @@ const FEE_SPLIT = {
   buyback:      0.3,   // 30 % → buyback & burn FISSION protocol token
 };
 
+// When perp positions are profitable and take-profit triggers:
+const PROFIT_SPLIT = {
+  sourceToken: 0.7,    // 70 % of profits → buy back the token whose fees funded the position
+  fission:     0.3,    // 30 % of profits → buy back FISSION protocol token
+};
+
 // ---------------------------------------------------------------------------
 // Risk management
 // ---------------------------------------------------------------------------
@@ -118,6 +124,7 @@ const config = {
   PUMP_FEES_PROGRAM_ID,
   FISSION_TOKEN_MINT,
   FEE_SPLIT,
+  PROFIT_SPLIT,
   RISK,
   INTERVALS,
   SOLANA_RPC_URL,

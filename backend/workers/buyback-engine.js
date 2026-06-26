@@ -105,7 +105,97 @@ export async function buybackFission(mint) {
 }
 
 /**
- * Run FISSION buyback for ALL active tokens.
+ * Execute buyback for the SOURCE TOKEN — the token whose creator fees
+ * generated the perpetual position profits.
+ *
+ * 70% of take-profit proceeds buy back this token and burn it.
+ * This creates direct buy pressure on the derivative token itself.
+ */
+export async function buybackSourceToken(mint) {
+  logger.info('Starting source token buyback', { mint });
+
+  try {
+    const token = await db.getToken(mint);
+    if (!token || token.status !== 'active') {
+      logger.warn('Token not active, skipping source buyback', { mint });
+      return null;
+    }
+
+    // Sum all source token buyback allocations
+    const splits = await db.queryDocs('splits', [['tokenMint', '==', mint]], null, 500);
+    const totalSourceAlloc = splits.reduce((sum, s) => sum + (s.sourceTokenBuyback || 0), 0);
+
+    // Sum already-executed source buybacks
+    const buybacks = await db.getBuybacksForToken(mint, 500);
+    const totalSourceSpent = buybacks
+      .filter(b => b.type === 'source-buyback-burn')
+      .reduce((sum, b) => sum + (b.amountSol || 0), 0);
+
+    const availableSol = totalSourceAlloc - totalSourceSpent;
+
+    if (availableSol < 0.001) {
+      logger.debug('Insufficient source token buyback funds', { mint, availableSol });
+      return null;
+    }
+
+    logger.info('Executing source token buyback swap', {
+      mint,
+      solAmount: availableSol,
+    });
+
+    // Swap SOL → source token via Jupiter
+    const swapResult = await swapSolForToken(mint, availableSol);
+
+    // Burn the tokens received
+    let burnSig = null;
+    let tokensBurned = 0;
+
+    try {
+      const balance = await getTokenBalance(config.protocolKeypair.publicKey, mint);
+      if (balance > 0) {
+        burnSig = await burnTokens(mint, balance);
+        tokensBurned = balance;
+        logger.info('Source tokens burned', { mint, tokensBurned: balance, burnSig });
+      }
+    } catch (burnErr) {
+      logger.error('Source token burn step failed (swap succeeded)', { mint, error: burnErr.message });
+    }
+
+    // Record buyback
+    const buybackId = await db.addBuyback({
+      tokenMint: mint,
+      targetMint: mint,
+      amountSol: availableSol,
+      tokensBurned,
+      swapTxSig: swapResult.signature,
+      burnTxSig: burnSig,
+      type: 'source-buyback-burn',
+    });
+
+    logger.info('Source token buyback & burn completed', {
+      mint,
+      amountSol: availableSol,
+      tokensBurned,
+      buybackId,
+    });
+
+    return {
+      buybackId,
+      amountSol: availableSol,
+      tokensBurned,
+      swapTxSig: swapResult.signature,
+      burnTxSig: burnSig,
+    };
+  } catch (err) {
+    logger.error('Source token buyback failed', { mint, error: err.message, stack: err.stack });
+    return null;
+  }
+}
+
+/**
+ * Run BOTH buyback types for ALL active tokens:
+ *   1. Source token buyback (70% of profits → buy the derivative token)
+ *   2. FISSION buyback (30% of fees + 30% of profits → buy FISSION)
  */
 export async function buybackAllTokens() {
   const tokens = await getAllTokens();
@@ -116,17 +206,22 @@ export async function buybackAllTokens() {
     return [];
   }
 
-  if (!config.FISSION_TOKEN_MINT) {
-    logger.info('FISSION_TOKEN_MINT not configured — buyback engine idle');
-    return [];
-  }
-
   const results = [];
+
   for (const token of active) {
-    const result = await buybackFission(token.id || token.mint);
-    if (result) results.push({ mint: token.id || token.mint, ...result });
+    const mint = token.id || token.mint;
+
+    // 1. Source token buyback (from take-profit proceeds)
+    const sourceResult = await buybackSourceToken(mint);
+    if (sourceResult) results.push({ mint, type: 'source', ...sourceResult });
+
+    // 2. FISSION buyback (from fee splits + take-profit proceeds)
+    if (config.FISSION_TOKEN_MINT) {
+      const fissionResult = await buybackFission(mint);
+      if (fissionResult) results.push({ mint, type: 'fission', ...fissionResult });
+    }
   }
 
-  logger.info(`FISSION buyback cycle complete: ${results.length}/${active.length}`);
+  logger.info(`Buyback cycle complete: ${results.length} buybacks executed`);
   return results;
 }
