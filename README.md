@@ -54,18 +54,16 @@ Fission is a protocol that transforms memecoin creator fees into automated perpe
 |:----:|--------|--------|
 | **01** | **Launch on Pump.fun** | Deploy your token with 100% creator fee share allocated to the protocol wallet. Admin must be revoked. |
 | **02** | **Register with Fission** | Submit your mint address. On-chain verification confirms fee configuration and admin revocation. |
-| **03** | **Automated Engine** | Fees are claimed, split into perpetual positions (60%), buybacks (20%), and revenue (10%+10%). Fully autonomous. |
+| **03** | **Automated Engine** | Fees are claimed, split into perpetual positions (70%) and FISSION buyback + burn (30%). Fully autonomous. |
 
 ### Fee Distribution
 
 ```
-                  +------ 60% ------> Jupiter Perp Positions
+                  +------ 70% ------> Jupiter Perp Positions
+                  |                   (profits → token buyback + burn)
+Creator Fees -----+
                   |
-Creator Fees -----+------ 20% ------> Token Buyback + Burn
-                  |
-                  +------ 10% ------> Protocol Revenue
-                  |
-                  +------ 10% ------> Ecosystem Fund
+                  +------ 30% ------> FISSION Buyback + Burn
 ```
 
 <br />
@@ -141,11 +139,10 @@ fission/
 ```mermaid
 graph LR
     A["Pump.fun<br/>Creator Fees"] -->|SOL| B["Fee Claimer"]
-    B -->|60%| C["Position Manager"]
-    B -->|20%| D["Buyback Engine"]
-    B -->|10%| E["Protocol Revenue"]
-    B -->|10%| F["Ecosystem Fund"]
+    B -->|70%| C["Position Manager"]
+    B -->|30%| D["Buyback Engine"]
     C -->|Perp Orders| G["Jupiter Perps"]
+    C -->|Profits| D
     D -->|Swap + Burn| H["Jupiter"]
     I["Risk Manager"] -.->|Monitor| C
     I -.->|Monitor| G

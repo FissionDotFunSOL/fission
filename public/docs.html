@@ -299,7 +299,7 @@
       <p>The protocol operates in a continuous three-phase cycle:</p>
       <ol>
         <li><strong>Fee Collection</strong> — When a creator deploys a token on Pump.fun and sets 100% creator fee share to the Fission protocol wallet, all trading fees from that token are automatically routed to Fission.</li>
-        <li><strong>Perpetual Deployment</strong> — Collected fees are deployed into leveraged perpetual positions on Jupiter Perps or Flash Trade, based on the creator's chosen asset, direction, and leverage level.</li>
+        <li><strong>Perpetual Deployment</strong> — Collected fees are deployed into leveraged perpetual positions on Jupiter Perps, based on the creator's chosen asset, direction, and leverage level.</li>
         <li><strong>Buyback and Burn</strong> — When positions are profitable, gains are harvested, used to buy the creator's token on the open market, and the purchased tokens are permanently burned by sending them to a dead address.</li>
       </ol>
 
@@ -310,9 +310,8 @@
       </p>
       <h3>Fee Distribution</h3>
       <ul>
-        <li><strong>85%</strong> — Deployed into the perpetual position as collateral</li>
-        <li><strong>10%</strong> — Protocol operational reserve (infrastructure, RPC, gas)</li>
-        <li><strong>5%</strong> — Protocol development fund</li>
+        <li><strong>70%</strong> — Deployed into perpetual positions as collateral (profits flow to token buyback + burn)</li>
+        <li><strong>30%</strong> — Direct FISSION buyback and burn</li>
       </ul>
 
       <!-- ===== PERPETUAL STRATEGY ===== -->
@@ -351,11 +350,6 @@
         <li><strong>SOL</strong> — Solana</li>
         <li><strong>BTC</strong> — Bitcoin</li>
         <li><strong>ETH</strong> — Ethereum</li>
-      </ul>
-      <h3>Flash Trade</h3>
-      <p>Up to 100x leverage. Available markets:</p>
-      <ul>
-        <li>BONK, WIF, JUP, DOGE, SUI, PEPE, JTO, PYTH, RNDR, HNT, W, TNSR, KMNO, MEW, POPCAT, WEN, BOME, MYRO</li>
       </ul>
 
       <hr class="docs-divider" />
@@ -409,7 +403,6 @@
       <ul>
         <li><strong>Pump.fun</strong> — Token creation and fee sharing configuration.</li>
         <li><strong>Jupiter Perps</strong> — Perpetual position management for SOL, BTC, ETH.</li>
-        <li><strong>Flash Trade</strong> — Perpetual position management for altcoin markets.</li>
         <li><strong>Jupiter Aggregator</strong> — Token swaps for buyback execution.</li>
       </ul>
 
@@ -488,7 +481,7 @@
       </p>
       <h3>Third-Party Services</h3>
       <p>
-        The Protocol interacts with third-party services including Pump.fun, Jupiter, Flash Trade, and Solana RPC providers. These services have their own privacy policies and terms of service. The Protocol is not responsible for data handling by third parties.
+        The Protocol interacts with third-party services including Pump.fun, Jupiter, and Solana RPC providers. These services have their own privacy policies and terms of service. The Protocol is not responsible for data handling by third parties.
       </p>
       <h3>On-Chain Data</h3>
       <p>
@@ -506,7 +499,7 @@
       </p>
       <h3>Smart Contract Risk</h3>
       <p>
-        The Protocol interacts with third-party smart contracts (Jupiter Perps, Flash Trade, Pump.fun). While these contracts have been audited, no audit eliminates all risk. Smart contract vulnerabilities, exploits, or failures could result in partial or total loss of funds.
+        The Protocol interacts with third-party smart contracts (Jupiter Perps, Pump.fun). While these contracts have been audited, no audit eliminates all risk. Smart contract vulnerabilities, exploits, or failures could result in partial or total loss of funds.
       </p>
       <h3>Protocol Risk</h3>
       <p>
