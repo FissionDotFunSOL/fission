@@ -22,6 +22,29 @@ export async function healthCheck(_req, res) {
 export async function listTokens(_req, res) {
   try {
     const tokens = await db.getAllTokens();
+
+    // Auto-enrich tokens that still have CA prefix as name
+    for (const t of tokens) {
+      const mint = t.mint || t.id;
+      if (mint && t.name === mint.slice(0, 8)) {
+        try {
+          const pumpRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`);
+          if (pumpRes.ok) {
+            const pumpData = await pumpRes.json();
+            if (pumpData?.name) {
+              t.name = pumpData.name;
+              t.symbol = pumpData.symbol || t.symbol;
+              t.image = pumpData.image_uri || t.image;
+              // Persist the fix so we don't re-fetch every time
+              await db.setToken(mint, { ...t, name: t.name, symbol: t.symbol, image: t.image });
+            }
+          }
+        } catch {
+          // Non-critical, continue with existing data
+        }
+      }
+    }
+
     res.json({ tokens });
   } catch (err) {
     logger.error('listTokens error', { error: err.message });
@@ -144,32 +167,48 @@ export async function registerToken(req, res) {
       tokenLeverage = config.FLASH_MAX_LEVERAGE;
     }
 
-    // ── Fetch token metadata (name, symbol) ──
+    // ── Fetch token metadata (name, symbol, image) ──
     let tokenName = trimmedMint.slice(0, 8);
     let tokenSymbol = trimmedMint.slice(0, 6);
     let tokenImage = null;
 
+    // Try Pump.fun API first (all registered tokens come from Pump.fun)
     try {
-      const metaRes = await fetch(config.SOLANA_RPC_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'getAsset',
-          params: { id: trimmedMint },
-        }),
-      });
-
-      if (metaRes.ok) {
-        const metaData = await metaRes.json();
-        const content = metaData?.result?.content;
-        if (content?.metadata?.name) tokenName = content.metadata.name;
-        if (content?.metadata?.symbol) tokenSymbol = content.metadata.symbol;
-        if (content?.links?.image) tokenImage = content.links.image;
+      const pumpRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${trimmedMint}`);
+      if (pumpRes.ok) {
+        const pumpData = await pumpRes.json();
+        if (pumpData?.name) tokenName = pumpData.name;
+        if (pumpData?.symbol) tokenSymbol = pumpData.symbol;
+        if (pumpData?.image_uri) tokenImage = pumpData.image_uri;
       }
-    } catch (metaErr) {
-      logger.warn('Failed to fetch token metadata', { mint: trimmedMint, error: metaErr.message });
+    } catch (pumpErr) {
+      logger.warn('Pump.fun metadata fetch failed, trying DAS', { mint: trimmedMint, error: pumpErr.message });
+    }
+
+    // Fallback: DAS API (getAsset) if Pump.fun didn't return data
+    if (tokenName === trimmedMint.slice(0, 8)) {
+      try {
+        const metaRes = await fetch(config.SOLANA_RPC_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getAsset',
+            params: { id: trimmedMint },
+          }),
+        });
+
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          const content = metaData?.result?.content;
+          if (content?.metadata?.name) tokenName = content.metadata.name;
+          if (content?.metadata?.symbol) tokenSymbol = content.metadata.symbol;
+          if (content?.links?.image) tokenImage = content.links.image;
+        }
+      } catch (metaErr) {
+        logger.warn('DAS metadata fetch also failed', { mint: trimmedMint, error: metaErr.message });
+      }
     }
 
     // ── Store token ──
