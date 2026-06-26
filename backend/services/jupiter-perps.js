@@ -258,6 +258,37 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
     const counter = Math.floor(Math.random() * 1_000_000_000);
     const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'increase');
 
+    // Debug: log all PDA values and seeds
+    logger.info('PDA debug', {
+      wallet: wallet.toBase58(),
+      positionPDA: positionPDA.toBase58(),
+      positionRequestPDA: positionRequestPDA.toBase58(),
+      perpetualsPDA: perpetualsPDA.toBase58(),
+      counter,
+      custodyKey: custodyKey.toBase58(),
+      collateralCustody: collateralCustody.toBase58(),
+      side,
+      pool: JLP_POOL.toBase58(),
+    });
+
+    // Debug: verify PDA derivation inline
+    const counterBufDbg = Buffer.alloc(8);
+    counterBufDbg.writeBigUInt64LE(BigInt(counter));
+    const [verifyPDA] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from('position_request'),
+        positionPDA.toBuffer(),
+        counterBufDbg,
+        Buffer.from([1]),
+      ],
+      JUP_PERPS_PROGRAM_ID,
+    );
+    logger.info('PDA verify', {
+      posReqFromFunc: positionRequestPDA.toBase58(),
+      posReqInline: verifyPDA.toBase58(),
+      match: positionRequestPDA.toBase58() === verifyPDA.toBase58(),
+    });
+
     const fundingATA = await getAssociatedTokenAddress(collateralMint, wallet);
     const positionRequestATA = await getAssociatedTokenAddress(collateralMint, positionRequestPDA, true);
 
