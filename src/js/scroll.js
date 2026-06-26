@@ -42,7 +42,7 @@ export function initScroll() {
         // Close mobile menu if open
         closeMobileMenu();
 
-        const headerHeight = document.querySelector('.site-header')?.offsetHeight || 64;
+        const headerHeight = document.querySelector('.header')?.offsetHeight || 64;
         const targetPos = target.getBoundingClientRect().top + window.scrollY - headerHeight;
 
         window.scrollTo({ top: targetPos, behavior: 'smooth' });
@@ -51,7 +51,7 @@ export function initScroll() {
   });
 
   // ── Header scroll effect ──
-  const header = document.querySelector('.site-header');
+  const header = document.querySelector('.header');
   if (header) {
     let ticking = false;
     window.addEventListener('scroll', () => {

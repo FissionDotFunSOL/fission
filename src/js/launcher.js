@@ -386,25 +386,3 @@ function setupDirectionSelector() {
     }
   });
 }
-
-// ---------------------------------------------------------------------------
-// Mobile hamburger menu toggle
-// ---------------------------------------------------------------------------
-export function initHamburger() {
-  const btn = document.getElementById('hamburger');
-  const nav = document.getElementById('header-nav');
-  if (!btn || !nav) return;
-
-  btn.addEventListener('click', () => {
-    const open = nav.classList.toggle('open');
-    btn.setAttribute('aria-expanded', String(open));
-  });
-
-  // Close menu when a nav link is clicked
-  nav.querySelectorAll('.nav-link').forEach(link => {
-    link.addEventListener('click', () => {
-      nav.classList.remove('open');
-      btn.setAttribute('aria-expanded', 'false');
-    });
-  });
-}

@@ -38,6 +38,11 @@
   border-bottom: 1px solid var(--border);
   background: rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(12px);
+  transition: background var(--speed) var(--ease), border-color var(--speed) var(--ease);
+}
+.header.scrolled {
+  background: rgba(0, 0, 0, 0.95);
+  border-bottom-color: var(--border-strong);
 }
 .header-inner {
   display: flex;
