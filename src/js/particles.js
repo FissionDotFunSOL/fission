@@ -17,17 +17,17 @@ export function initParticles() {
   let animationId;
 
   const CONFIG = {
-    count: prefersReducedMotion ? 15 : 40,
-    maxSpeed: prefersReducedMotion ? 0.08 : 0.15,
-    connectionDistance: 100,
-    mouseRepulsionRadius: 80,
-    mouseRepulsionForce: 0.04,
+    count: prefersReducedMotion ? 20 : 60,
+    maxSpeed: prefersReducedMotion ? 0.1 : 0.25,
+    connectionDistance: 120,
+    mouseRepulsionRadius: 100,
+    mouseRepulsionForce: 0.06,
     colors: [
-      'rgba(232, 213, 181, ',    // warm amber
-      'rgba(196, 168, 130, ',    // muted gold
-      'rgba(168, 180, 196, ',    // cool gray
+      'rgba(212, 162, 78, ',    // accent gold
+      'rgba(160, 122, 56, ',    // accent dim
+      'rgba(232, 196, 104, ',   // accent bright
     ],
-    colorWeights: [0.5, 0.3, 0.2],
+    colorWeights: [0.6, 0.25, 0.15],
   };
 
   function pickColor() {

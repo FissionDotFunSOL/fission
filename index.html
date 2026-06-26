@@ -7,7 +7,7 @@
   <meta name="description" content="Creator fees fuel automated perpetual positions. Profits buy back and burn your token. No vaults. No deposits. Pure on-chain." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/styles/variables.css" />
   <link rel="stylesheet" href="/src/styles/reset.css" />
   <link rel="stylesheet" href="/src/styles/effects.css" />
@@ -17,7 +17,10 @@
   <script type="module" src="/src/main.js"></script>
 </head>
 
-<body>
+<body class="scanlines noise">
+
+  <!-- GRID BACKGROUND -->
+  <div class="grid-bg" aria-hidden="true"></div>
 
   <!-- HEADER -->
   <header class="header" id="site-header">
@@ -29,7 +32,6 @@
         <a href="#engine" class="nav-link">Engine</a>
         <a href="#dashboard" class="nav-link">Dashboard</a>
         <a href="#launch" class="nav-link">Launch</a>
-        <a href="https://github.com/FissionDotFun/fission" target="_blank" class="nav-link">Docs</a>
       </nav>
 
       <a href="#launch" class="btn btn-primary btn-sm header-cta">LAUNCH TOKEN</a>
@@ -49,16 +51,15 @@
     <canvas id="particle-canvas" class="hero-canvas" aria-hidden="true"></canvas>
 
     <div class="hero-content">
-      <p class="hero-tagline" id="hero-tagline">perpetual-backed derivatives</p>
-      <h1 class="hero-title">Fission</h1>
+      <p class="hero-tagline cursor" id="hero-tagline"></p>
+      <h1 class="hero-title glitch">FISSION</h1>
       <p class="hero-subtitle">
-        Launch a coin on Pump.fun. Creator fees open leveraged perp positions
-        on Jupiter. Profits buy back and burn your token.
-        Autonomous. Permanent. On-chain.
+        Pump.fun fees fuel leveraged perp positions.<br />
+        Profits buy back and burn your token. Autonomous. Forever.
       </p>
       <div class="hero-ctas">
-        <a href="#launch" class="btn btn-primary">LAUNCH</a>
-        <a href="#how-it-works" class="btn btn-outline">LEARN MORE</a>
+        <a href="#launch" class="btn btn-primary">LAUNCH TOKEN</a>
+        <a href="#how-it-works" class="btn btn-outline">HOW IT WORKS</a>
       </div>
     </div>
 
@@ -74,8 +75,8 @@
   <section class="section" id="how-it-works">
     <div class="container">
       <div class="section-header reveal">
-        <span class="section-label">Protocol</span>
-        <h2 class="section-title">How it works</h2>
+        <span class="section-label">How it works</span>
+        <h2 class="section-title">Three Steps</h2>
         <p class="section-subtitle">
           From Pump.fun launch to autonomous perpetual-backed returns.
         </p>
@@ -121,8 +122,8 @@
   <section class="section" id="engine">
     <div class="container">
       <div class="section-header reveal">
-        <span class="section-label">Architecture</span>
-        <h2 class="section-title">Fee engine</h2>
+        <span class="section-label">Fee engine</span>
+        <h2 class="section-title">Fee Architecture</h2>
         <p class="section-subtitle">
           Every SOL of creator fees is split, deployed, and burned autonomously.
         </p>
@@ -166,8 +167,8 @@
   <section class="section" id="stats">
     <div class="container">
       <div class="section-header reveal">
-        <span class="section-label">Metrics</span>
-        <h2 class="section-title">Protocol stats</h2>
+        <span class="section-label">Live stats</span>
+        <h2 class="section-title">Protocol Metrics</h2>
       </div>
 
       <div class="stats-grid reveal stagger">
@@ -404,30 +405,6 @@
       </div>
     </div>
   </section>
-
-  <!-- ═══════════════════════════════════════════════════════
-       LIVE ACTIVITY FEED
-       ═══════════════════════════════════════════════════════ -->
-  <section class="section" id="activity" style="padding-top:0;">
-    <div class="container">
-      <div class="section-header reveal">
-        <span class="section-label">Live</span>
-        <h2 class="section-title">Activity feed</h2>
-      </div>
-
-      <div class="activity-feed reveal" id="activity-feed">
-        <div class="activity-feed-header">
-          <span class="pulse-dot"></span>
-          <span class="activity-feed-label">Protocol Events</span>
-        </div>
-        <div class="activity-feed-body" id="activity-feed-body">
-          <div class="activity-empty">Waiting for protocol events...</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <div class="container"><hr class="divider" /></div>
 
   <!-- ═══════════════════════════════════════════════════════
        FOOTER
