@@ -81,9 +81,18 @@ const DISC_DECREASE = anchorDiscriminator('create_decrease_position_market_reque
 // PDA derivation
 // ---------------------------------------------------------------------------
 
-function derivePositionPDA(wallet, custodyKey) {
+function derivePositionPDA(wallet, custodyKey, collateralCustodyKey, side) {
+  // side: 1=Long, 2=Short
+  const sideEnum = side === 'short' ? 2 : 1;
   const [pda] = PublicKey.findProgramAddressSync(
-    [Buffer.from('position'), wallet.toBuffer(), JLP_POOL.toBuffer(), custodyKey.toBuffer()],
+    [
+      Buffer.from('position'),
+      wallet.toBuffer(),
+      JLP_POOL.toBuffer(),
+      custodyKey.toBuffer(),
+      collateralCustodyKey.toBuffer(),
+      Buffer.from([sideEnum]),
+    ],
     JUP_PERPS_PROGRAM_ID,
   );
   return pda;
@@ -144,9 +153,24 @@ export async function getPositionPnl(market) {
     }
 
     const wallet = config.protocolKeypair.publicKey;
-    const positionPDA = derivePositionPDA(wallet, custodyKey);
     const conn = getConnection();
-    const acctInfo = await conn.getAccountInfo(positionPDA);
+
+    // Try long first, then short
+    let positionPDA;
+    let acctInfo;
+    let detectedSide = 'long';
+    for (const tryS of ['long', 'short']) {
+      const cc = tryS === 'short' ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
+      const pda = derivePositionPDA(wallet, custodyKey, cc, tryS);
+      const info = await conn.getAccountInfo(pda);
+      if (info && info.data && info.data.length >= 210) {
+        positionPDA = pda;
+        acctInfo = info;
+        detectedSide = tryS;
+        break;
+      }
+    }
+    if (!positionPDA) positionPDA = derivePositionPDA(wallet, custodyKey, CUSTODY_ACCOUNTS['SOL'], 'long');
 
     if (!acctInfo || !acctInfo.data || acctInfo.data.length < 210) {
       return { exists: false, pnl: 0, size: 0, entry: 0 };
@@ -180,7 +204,8 @@ export async function getPositionPnl(market) {
       // Can't compute unrealised PnL without price, return 0
     }
 
-    return { exists: true, pnl, size: sizeUsd, entry, collateralUsd };
+    const sideFromData = data[152] === 2 ? 'short' : 'long';
+    return { exists: true, pnl, size: sizeUsd, entry, collateralUsd, side: sideFromData };
   } catch (err) {
     logger.error('getPositionPnl error', { market, error: err.message });
     return { exists: false, pnl: 0, size: 0, entry: 0, error: err.message };
@@ -221,7 +246,7 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
       collateralAmount = BigInt(Math.round(collateralSol * 1e9));
     }
 
-    const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, side);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Date.now();
     const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
@@ -353,7 +378,7 @@ export async function closePosition(market) {
     }
 
     const wallet = config.protocolKeypair.publicKey;
-    const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Date.now();
     const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
@@ -432,7 +457,7 @@ export async function reducePosition(market, pct) {
     const reduceSize = Math.abs(pnlInfo.size) * pct;
     const wallet = config.protocolKeypair.publicKey;
     const custodyKey = CUSTODY_ACCOUNTS[market];
-    const positionPDA = derivePositionPDA(wallet, custodyKey);
+    const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Date.now();
     const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
