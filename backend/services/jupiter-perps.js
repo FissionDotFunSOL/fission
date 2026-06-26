@@ -66,10 +66,17 @@ async function getPerpsProgram() {
   try {
     const require = createRequire(import.meta.url);
     const { Program, AnchorProvider } = require('@coral-xyz/anchor');
+    const { PublicKey: CjsPublicKey } = require('@solana/web3.js');
 
     const conn = getConnection();
+
+    // Use CJS PublicKey for the wallet — Anchor needs matching class instances
+    const walletPubkey = config.protocolKeypair?.publicKey
+      ? new CjsPublicKey(config.protocolKeypair.publicKey.toBase58())
+      : CjsPublicKey.default;
+
     const dummyWallet = {
-      publicKey: config.protocolKeypair?.publicKey || PublicKey.default,
+      publicKey: walletPubkey,
       signTransaction: (tx) => tx,
       signAllTransactions: (txs) => txs,
     };
@@ -79,10 +86,13 @@ async function getPerpsProgram() {
       skipPreflight: false,
     });
 
-    const idl = await Program.fetchIdl(JUP_PERPS_PROGRAM_ID, provider);
+    // Convert program ID to CJS PublicKey
+    const programId = new CjsPublicKey(JUP_PERPS_PROGRAM_ID.toBase58());
+
+    const idl = await Program.fetchIdl(programId, provider);
     if (!idl) throw new Error('Could not fetch Jupiter Perps IDL from chain');
 
-    _program = new Program(idl, JUP_PERPS_PROGRAM_ID, provider);
+    _program = new Program(idl, programId, provider);
     logger.info('Jupiter Perps Anchor program loaded', {
       instructionCount: idl.instructions.length,
     });
@@ -290,22 +300,22 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
         counter: new BN(counter),
       })
       .accounts({
-        owner: wallet,
-        fundingAccount: fundingATA,
-        perpetuals: perpetualsPDA,
-        pool: JLP_POOL,
-        position: positionPDA,
-        positionRequest: positionRequestPDA,
-        positionRequestAta: positionRequestATA,
-        custody: custodyKey,
-        collateralCustody: collateralCustody,
-        inputMint: collateralMint,
-        referral: REFERRAL_ACCOUNT,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        eventAuthority: EVENT_AUTHORITY,
-        program: JUP_PERPS_PROGRAM_ID,
+        owner: wallet.toBase58(),
+        fundingAccount: fundingATA.toBase58(),
+        perpetuals: perpetualsPDA.toBase58(),
+        pool: JLP_POOL.toBase58(),
+        position: positionPDA.toBase58(),
+        positionRequest: positionRequestPDA.toBase58(),
+        positionRequestAta: positionRequestATA.toBase58(),
+        custody: custodyKey.toBase58(),
+        collateralCustody: collateralCustody.toBase58(),
+        inputMint: collateralMint.toBase58(),
+        referral: REFERRAL_ACCOUNT.toBase58(),
+        tokenProgram: TOKEN_PROGRAM_ID.toBase58(),
+        associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID.toBase58(),
+        systemProgram: SystemProgram.programId.toBase58(),
+        eventAuthority: EVENT_AUTHORITY.toBase58(),
+        program: JUP_PERPS_PROGRAM_ID.toBase58(),
       })
       .instruction();
 
