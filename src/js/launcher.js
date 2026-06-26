@@ -57,20 +57,27 @@ function renderPopularTokens() {
         <div class="token-label">${t.name}</div>
       </div>
     `).join('')}
+    
     <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent-secondary);margin-top:16px;margin-bottom:4px;">⚡ Flash Trade — up to 100x</div>
-    ${flashTokens.map(t => `
-      <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}" data-provider="${t.provider}" data-maxlev="${t.maxLev}">
-        <div class="token-perps-badge" style="color:var(--accent-secondary);">FLASH</div>
-        <div class="token-symbol">${t.symbol}</div>
-        <div class="token-label">${t.name}</div>
-      </div>
-    `).join('')}
+    <div style="grid-column:1/-1; width:100%; position:relative;">
+      <select id="flash-token-select" class="glass-input" style="width:100%; padding: 16px; background: rgba(0,0,0,0.5); border: 1px solid var(--border-accent); color: var(--accent-secondary); font-family: var(--font-mono); font-size: 1rem; border-radius: 4px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;">
+        <option value="" disabled selected>-- Select a Flash Trade Market --</option>
+        ${flashTokens.map(t => `
+          <option value="${t.symbol}" data-provider="${t.provider}" data-maxlev="${t.maxLev}">${t.symbol} - ${t.name}</option>
+        `).join('')}
+      </select>
+      <div style="position:absolute; right:16px; top:50%; transform:translateY(-50%); pointer-events:none; color:var(--accent-secondary); font-size: 0.8rem;">▼</div>
+    </div>
   `;
 
   grid.querySelectorAll('.popular-token-card').forEach(card => {
     card.addEventListener('click', () => {
       grid.querySelectorAll('.popular-token-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
+      
+      const flashSelect = document.getElementById('flash-token-select');
+      if (flashSelect) flashSelect.value = "";
+      
       selectedToken = card.getAttribute('data-symbol');
 
       // Update leverage caps based on provider
@@ -86,6 +93,27 @@ function renderPopularTokens() {
       }
     });
   });
+
+  const flashSelect = document.getElementById('flash-token-select');
+  if (flashSelect) {
+    flashSelect.addEventListener('change', (e) => {
+      grid.querySelectorAll('.popular-token-card').forEach(c => c.classList.remove('selected'));
+      
+      const option = e.target.options[e.target.selectedIndex];
+      selectedToken = option.value;
+      
+      const maxLev = parseInt(option.getAttribute('data-maxlev')) || 100;
+      updateLeverageCaps(maxLev);
+
+      const nameInput = document.getElementById('derivative-name');
+      if (nameInput && !nameInput.value) {
+        const prefixes = ['MEGA', 'ULTRA', 'TURBO', 'NITRO', 'FLUX', 'FISSION'];
+        const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+        nameInput.value = `${prefix}_${selectedToken}`;
+        derivativeName = nameInput.value;
+      }
+    });
+  }
 }
 
 function updateLeverageCaps(maxLev) {
