@@ -13,6 +13,7 @@ import { initLauncher } from './js/launcher.js';
 import { initStats } from './js/stats.js';
 import { initToast } from './js/toast.js';
 import { initTicker } from './js/ticker.js';
+import { initActivityFeed } from './js/activity.js';
 
 // Boot
 document.addEventListener('DOMContentLoaded', () => {
@@ -24,4 +25,5 @@ document.addEventListener('DOMContentLoaded', () => {
   initLauncher();
   initStats();
   initToast();
+  initActivityFeed();
 });

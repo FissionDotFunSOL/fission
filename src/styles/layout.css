@@ -910,3 +910,69 @@ body {
     padding: 24px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════
+   ACTIVITY FEED — Terminal-style event log
+   ═══════════════════════════════════════════════════════════ */
+.activity-feed {
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  max-width: 640px;
+}
+.activity-feed-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.activity-feed-label {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.activity-feed-body {
+  padding: 16px 20px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.activity-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  line-height: 1.6;
+  animation: activity-in 0.3s var(--ease);
+}
+.activity-time {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  min-width: 48px;
+}
+.activity-type {
+  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 72px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.activity-detail {
+  color: var(--text-secondary);
+}
+.activity-empty {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  text-align: center;
+  padding: 32px 0;
+}
+@keyframes activity-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
