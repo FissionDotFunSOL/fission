@@ -144,9 +144,40 @@ export async function registerToken(req, res) {
       tokenLeverage = config.FLASH_MAX_LEVERAGE;
     }
 
+    // ── Fetch token metadata (name, symbol) ──
+    let tokenName = trimmedMint.slice(0, 8);
+    let tokenSymbol = trimmedMint.slice(0, 6);
+    let tokenImage = null;
+
+    try {
+      const metaRes = await fetch(config.SOLANA_RPC_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getAsset',
+          params: { id: trimmedMint },
+        }),
+      });
+
+      if (metaRes.ok) {
+        const metaData = await metaRes.json();
+        const content = metaData?.result?.content;
+        if (content?.metadata?.name) tokenName = content.metadata.name;
+        if (content?.metadata?.symbol) tokenSymbol = content.metadata.symbol;
+        if (content?.links?.image) tokenImage = content.links.image;
+      }
+    } catch (metaErr) {
+      logger.warn('Failed to fetch token metadata', { mint: trimmedMint, error: metaErr.message });
+    }
+
     // ── Store token ──
     const tokenData = {
       mint: trimmedMint,
+      name: tokenName,
+      symbol: tokenSymbol,
+      image: tokenImage,
       underlying: underlyingSymbol,
       perpsMarket,
       provider,
@@ -160,6 +191,8 @@ export async function registerToken(req, res) {
     await db.setToken(trimmedMint, tokenData);
     logger.info('Token registered', {
       mint: trimmedMint,
+      name: tokenName,
+      symbol: tokenSymbol,
       underlying: underlyingSymbol,
       perpsMarket,
       side: tokenSide,

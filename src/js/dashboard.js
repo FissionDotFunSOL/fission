@@ -73,7 +73,8 @@ async function fetchData() {
 
       return {
         mint,
-        token: t.token || mint?.slice(0, 8) || 'UNKNOWN',
+        token: t.name || t.symbol || t.token || mint?.slice(0, 8) || 'UNKNOWN',
+        symbol: t.symbol || '',
         underlying: t.underlying || t.linkedTo || '—',
         side: (t.side || pos.side || 'long').toLowerCase(),
         leverage: t.leverage || pos.leverage || 100,
@@ -86,6 +87,7 @@ async function fetchData() {
         status: t.status || 'active',
         lastAction: pos.lastAction || '—',
         lastActionAt: pos.lastActionAt || 0,
+        image: t.image || null,
       };
     });
   } catch {
