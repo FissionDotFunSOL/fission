@@ -68,7 +68,7 @@ async function getPerpsProgram() {
     const { Program, AnchorProvider } = require('@coral-xyz/anchor');
     const { PublicKey: CjsPublicKey, Connection: CjsConnection } = require('@solana/web3.js');
 
-    // Create a CJS Connection — the existing ESM connection may cause issues
+    // Create a CJS Connection to avoid ESM/CJS mismatch
     const rpcUrl = config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
     const conn = new CjsConnection(rpcUrl, 'confirmed');
 
@@ -88,15 +88,22 @@ async function getPerpsProgram() {
       skipPreflight: false,
     });
 
-    // Use string for program ID — Anchor handles string→PublicKey internally
     const programIdStr = JUP_PERPS_PROGRAM_ID.toBase58();
 
     const idl = await Program.fetchIdl(programIdStr, provider);
     if (!idl) throw new Error('Could not fetch Jupiter Perps IDL from chain');
 
-    _program = new Program(idl, programIdStr, provider);
+    // Anchor 0.30.x: constructor is Program(idl, provider)
+    // The program ID is read from idl.address (or idl.metadata.address)
+    // Ensure idl.address is set correctly
+    if (!idl.address) {
+      idl.address = programIdStr;
+    }
+
+    _program = new Program(idl, provider);
     logger.info('Jupiter Perps Anchor program loaded', {
       instructionCount: idl.instructions.length,
+      programId: programIdStr,
     });
 
     return _program;
