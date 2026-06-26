@@ -48,6 +48,9 @@ const RISK = {
   minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.005,
   maxPositionSol:       parseFloat(process.env.MAX_POSITION_SOL) || 999999,
   liquidationWarningPct: parseFloat(process.env.LIQUIDATION_WARNING_PCT) || 0.05,
+  // Minimum SOL to always keep in the wallet for gas/transaction fees
+  // The system will NEVER deploy funds if it would drop below this
+  minWalletBalanceSol:  parseFloat(process.env.MIN_WALLET_BALANCE_SOL) || 0.05,
   // Leverage multiplier for perp positions (Jupiter allows 1.1x–250x)
   // Default 100x: maximum aggression — all fees immediately deployed at max leverage
   leverage:             parseFloat(process.env.LEVERAGE) || 100,

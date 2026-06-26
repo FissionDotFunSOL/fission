@@ -4,6 +4,7 @@ import * as db from '../db/firebase.js';
 import * as perps from '../services/perps-router.js';
 import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
+import { getSolBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
 
 /**
@@ -37,7 +38,7 @@ export async function managePositionForToken(mint) {
     const deployedAmount = position?.deployedSol || 0;
     const availableToDeployRaw = totalPositionFund - deployedAmount;
 
-    // Reserve cash buffer
+    // Reserve cash buffer (5% of position fund kept as safety margin)
     const reserveAmount = availableToDeployRaw * config.RISK.reservePct;
     const availableToDeploy = Math.max(0, availableToDeployRaw - reserveAmount);
 
@@ -58,6 +59,36 @@ export async function managePositionForToken(mint) {
       { retries: 2, delayMs: 2000, label: `getPositionPnl(${market})` }
     );
 
+    // -----------------------------------------------------------------------
+    // Proportional PnL: multiple tokens may share the same on-chain market.
+    // We track each token's share of the total deployed capital and allocate
+    // PnL proportionally so each token gets accurate reporting.
+    // -----------------------------------------------------------------------
+    if (pnlInfo.exists && deployedAmount > 0) {
+      // Find all tokens that share this market + side combination
+      const allTokens = await db.getAllTokens();
+      const allPositions = await db.getAllPositions();
+      const sameMarketPositions = allPositions.filter(p =>
+        p.market === market && p.side === (token.side || 'long') && (p.deployedSol || 0) > 0
+      );
+      const totalDeployedForMarket = sameMarketPositions.reduce((sum, p) => sum + (p.deployedSol || 0), 0);
+
+      // This token's share of the on-chain position
+      const share = totalDeployedForMarket > 0 ? deployedAmount / totalDeployedForMarket : 1;
+      const proportionalPnl = (pnlInfo.pnl || 0) * share;
+
+      // Update position with proportional PnL
+      await db.setPosition(mint, {
+        ...position,
+        tokenMint: mint,
+        pnl: proportionalPnl,
+        totalPnl: pnlInfo.pnl || 0,
+        share: share,
+        entry: pnlInfo.entry || position?.entry || 0,
+        updatedAt: Date.now(),
+      });
+    }
+
     // NOTE: Drawdown, take-profit, and risk checks are handled by risk-manager.js
     // Position-manager only handles opening and adding to positions.
 
@@ -70,15 +101,36 @@ export async function managePositionForToken(mint) {
     }
 
     // -----------------------------------------------------------------------
-    // Check 4: Max position cap
+    // Check 2: Wallet gas buffer — NEVER go below minWalletBalanceSol
     // -----------------------------------------------------------------------
-    const deployAmount = Math.min(availableToDeploy, config.RISK.maxPositionSol - deployedAmount);
+    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    const minBalance = config.RISK.minWalletBalanceSol;
+    const maxDeployable = Math.max(0, walletBalance - minBalance);
+
+    if (maxDeployable <= 0) {
+      logger.warn('Wallet balance too low for gas fees, skipping deployment', {
+        mint,
+        walletBalance: walletBalance.toFixed(4),
+        minBalance,
+      });
+      return null;
+    }
+
+    // -----------------------------------------------------------------------
+    // Check 3: Max position cap
+    // -----------------------------------------------------------------------
+    let deployAmount = Math.min(
+      availableToDeploy,
+      config.RISK.maxPositionSol - deployedAmount,
+      maxDeployable  // never exceed what the wallet can safely give
+    );
 
     if (deployAmount <= 0) {
-      logger.info('Position at max cap, skipping deployment', {
+      logger.info('Position at max cap or wallet gas limit reached', {
         mint,
         deployedAmount,
         maxPositionSol: config.RISK.maxPositionSol,
+        walletBalance: walletBalance.toFixed(4),
       });
       return null;
     }
@@ -107,11 +159,12 @@ export async function managePositionForToken(mint) {
       mint,
       market,
       direction,
-      leverage: `${leverage}x`,
+      leverage: `${effectiveLeverage}x`,
       collateralSol: deployAmount.toFixed(6),
       collateralUsd: collateralUsd.toFixed(2),
       sizeUsd: sizeUsd.toFixed(2),
       totalDeployed: (deployedAmount + deployAmount).toFixed(6),
+      walletBalanceAfter: (walletBalance - deployAmount).toFixed(4),
     });
 
     // Open/add to position with retry — pass collateral + direction
@@ -125,7 +178,7 @@ export async function managePositionForToken(mint) {
       tokenMint: mint,
       side: direction,
       market,
-      leverage,
+      leverage: effectiveLeverage,
       deployedSol: deployedAmount + deployAmount,
       collateralUsd: (deployedAmount + deployAmount) * (solPrice || 150),
       sizeUsd,
