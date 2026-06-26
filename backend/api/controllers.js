@@ -101,7 +101,7 @@ export async function registerToken(req, res) {
     }
 
     // Validate leverage (1–250, Jupiter Perps max is 250x)
-    const tokenLeverage = Math.min(250, Math.max(1, parseInt(leverage) || config.RISK.leverage));
+    let tokenLeverage = Math.min(250, Math.max(1, parseInt(leverage) || config.RISK.leverage));
     if (isNaN(tokenLeverage) || tokenLeverage < 1 || tokenLeverage > 250) {
       return res.status(400).json({
         error: 'Invalid leverage',
