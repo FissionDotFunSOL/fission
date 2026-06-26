@@ -26,6 +26,9 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Trust proxy (Railway / Vercel sit behind load balancers)
+app.set('trust proxy', 1);
+
 // Rate limiting
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -33,6 +36,7 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, try again later' },
+  validate: { trustProxy: false, xForwardedForHeader: false },
 });
 
 const registerLimiter = rateLimit({
@@ -41,6 +45,7 @@ const registerLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many registration attempts, try again later' },
+  validate: { trustProxy: false, xForwardedForHeader: false },
 });
 
 // Request logging

@@ -189,20 +189,23 @@ export async function buildDistributeFeesIx(mint) {
   try {
     await loadSdk();
     const conn = getConnection();
+    logger.info('Building distribute fees IX with SDK', { mint: mintPk.toBase58() });
     const sdk = new _OnlinePumpSdk(conn);
 
     const instructions = await sdk.buildDistributeCreatorFeesInstructions(mintPk);
 
-    logger.debug('Built distribute fees IX', {
+    logger.info('Built distribute fees IX', {
       mint: mintPk.toBase58(),
-      ixCount: Array.isArray(instructions) ? instructions.length : 1,
+      ixCount: Array.isArray(instructions) ? instructions.length : (instructions ? 1 : 0),
+      hasInstructions: !!instructions,
     });
 
-    return { instructions: Array.isArray(instructions) ? instructions : [instructions] };
+    return { instructions: Array.isArray(instructions) ? instructions : (instructions ? [instructions] : []) };
   } catch (err) {
     logger.error('buildDistributeFeesIx failed', {
       mint: mintPk.toBase58(),
       error: err.message,
+      stack: err.stack,
     });
     throw err;
   }
@@ -241,9 +244,9 @@ export async function claimFees(mint) {
     const conn = getConnection();
     const sdk = new _OnlinePumpSdk(conn);
     const minFee = await sdk.getMinimumDistributableFee(mintPk);
-    logger.debug('Minimum distributable fee', { mint: mintPk.toBase58(), minFee });
-  } catch {
-    // Non-critical — proceed anyway
+    logger.info('Minimum distributable fee check', { mint: mintPk.toBase58(), minFee });
+  } catch (minFeeErr) {
+    logger.warn('Min fee check failed (non-critical)', { error: minFeeErr.message });
   }
 
   const { instructions } = await buildDistributeFeesIx(mintPk);

@@ -313,3 +313,38 @@ export async function listMarkets(_req, res) {
   }));
   res.json({ markets: [...jupiterMarkets, ...flashMarkets] });
 }
+
+// ---------------------------------------------------------------------------
+// Admin: manually trigger a worker cycle
+// ---------------------------------------------------------------------------
+export async function triggerWorker(req, res) {
+  const { worker } = req.params;
+
+  const validWorkers = ['fee-claimer', 'position-manager', 'buyback-engine', 'risk-manager'];
+  if (!validWorkers.includes(worker)) {
+    return res.status(400).json({ error: `Invalid worker. Must be one of: ${validWorkers.join(', ')}` });
+  }
+
+  try {
+    let result;
+
+    if (worker === 'fee-claimer') {
+      const { claimAllFees } = await import('../workers/fee-claimer.js');
+      result = await claimAllFees();
+    } else if (worker === 'position-manager') {
+      const { manageAllPositions } = await import('../workers/position-manager.js');
+      result = await manageAllPositions();
+    } else if (worker === 'buyback-engine') {
+      const { buybackAllTokens } = await import('../workers/buyback-engine.js');
+      result = await buybackAllTokens();
+    } else if (worker === 'risk-manager') {
+      const { runRiskCheck } = await import('../workers/risk-manager.js');
+      result = await runRiskCheck();
+    }
+
+    res.json({ triggered: worker, result });
+  } catch (err) {
+    logger.error('Manual trigger failed', { worker, error: err.message });
+    res.status(500).json({ error: err.message });
+  }
+}

@@ -31,4 +31,7 @@ router.get('/markets',         ctrl.listMarkets);
 // System Status (full engine state)
 router.get('/status',          ctrl.getSystemStatus);
 
+// Admin: manually trigger a worker cycle (for testing)
+router.post('/admin/trigger/:worker', ctrl.triggerWorker);
+
 export default router;
