@@ -81,10 +81,29 @@ const NODE_ENV = process.env.NODE_ENV || 'development';
 const FIREBASE_SERVICE_ACCOUNT = process.env.FIREBASE_SERVICE_ACCOUNT || '';
 
 // ---------------------------------------------------------------------------
-// Jupiter Perps — supported markets
+// Jupiter Perps — supported markets (SOL, BTC, ETH only)
 // These map to custody accounts in the JLP pool
 // ---------------------------------------------------------------------------
-const PERPS_MARKETS = ['SOL', 'BTC', 'ETH'];
+const JUPITER_MARKETS = ['SOL', 'BTC', 'ETH'];
+
+// ---------------------------------------------------------------------------
+// Flash Trade — supported markets (everything else)
+// Flash Trade V2 supports ~21 pairs including memecoins
+// ---------------------------------------------------------------------------
+const FLASH_API_URL = process.env.FLASH_API_URL || 'https://flashapi.trade/v2';
+const FLASH_V2_RPC_URL = process.env.FLASH_V2_RPC_URL || 'https://flash.magicblock.xyz';
+const FLASH_MARKETS = [
+  'BONK', 'WIF', 'JUP', 'JTO', 'PYTH', 'DOGE', 'SUI', 'PEPE',
+  'RNDR', 'HNT', 'W', 'TNSR', 'KMNO', 'MEW', 'POPCAT', 'WEN',
+  'BOME', 'MYRO',
+];
+const FLASH_MAX_LEVERAGE = 100;
+
+// Combined list of all supported perps markets
+const ALL_PERPS_MARKETS = [...JUPITER_MARKETS, ...FLASH_MARKETS];
+
+// Legacy alias (some code references this)
+const PERPS_MARKETS = JUPITER_MARKETS;
 
 // ---------------------------------------------------------------------------
 // Export
@@ -101,7 +120,13 @@ const config = {
   JUPITER_API_URL,
   JUPITER_PERPS_PROGRAM_ID,
   JLP_POOL_ADDRESS,
+  JUPITER_MARKETS,
   PERPS_MARKETS,
+  FLASH_API_URL,
+  FLASH_V2_RPC_URL,
+  FLASH_MARKETS,
+  FLASH_MAX_LEVERAGE,
+  ALL_PERPS_MARKETS,
   PORT,
   NODE_ENV,
   FIREBASE_SERVICE_ACCOUNT,

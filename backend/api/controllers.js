@@ -126,17 +126,30 @@ export async function registerToken(req, res) {
       });
     }
 
-    // ── Resolve Jupiter Perps market from underlying ──
+    // ── Resolve perps market from underlying (Jupiter + Flash Trade) ──
     const underlyingSymbol = underlying?.trim()?.toUpperCase() || null;
-    const perpsMarket = underlyingSymbol && config.PERPS_MARKETS.includes(underlyingSymbol)
+    const perpsMarket = underlyingSymbol && config.ALL_PERPS_MARKETS.includes(underlyingSymbol)
       ? underlyingSymbol
       : null;
+
+    // Determine provider
+    const provider = perpsMarket && config.JUPITER_MARKETS.includes(perpsMarket)
+      ? 'jupiter'
+      : perpsMarket && config.FLASH_MARKETS.includes(perpsMarket)
+        ? 'flash'
+        : null;
+
+    // Cap leverage for Flash markets
+    if (provider === 'flash' && tokenLeverage > config.FLASH_MAX_LEVERAGE) {
+      tokenLeverage = config.FLASH_MAX_LEVERAGE;
+    }
 
     // ── Store token ──
     const tokenData = {
       mint: trimmedMint,
       underlying: underlyingSymbol,
       perpsMarket,
+      provider,
       side: tokenSide,
       leverage: tokenLeverage,
       sharingConfigPDA: verification.pda,
@@ -285,12 +298,18 @@ export async function getSystemStatus(_req, res) {
 }
 
 // ---------------------------------------------------------------------------
-// Markets — list available Jupiter Perps markets for the frontend
+// Markets — list all available perps markets (Jupiter + Flash Trade)
 // ---------------------------------------------------------------------------
 export async function listMarkets(_req, res) {
-  const markets = config.PERPS_MARKETS.map((symbol) => ({
+  const jupiterMarkets = config.JUPITER_MARKETS.map((symbol) => ({
     symbol,
-    platform: 'jupiter-perps',
+    provider: 'jupiter',
+    maxLeverage: 250,
   }));
-  res.json({ markets });
+  const flashMarkets = config.FLASH_MARKETS.map((symbol) => ({
+    symbol,
+    provider: 'flash',
+    maxLeverage: config.FLASH_MAX_LEVERAGE,
+  }));
+  res.json({ markets: [...jupiterMarkets, ...flashMarkets] });
 }

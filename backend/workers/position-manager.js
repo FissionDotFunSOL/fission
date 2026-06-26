@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import * as perps from '../services/jupiter-perps.js';
+import * as perps from '../services/perps-router.js';
 import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { retry } from '../utils/helpers.js';
@@ -41,14 +41,14 @@ export async function managePositionForToken(mint) {
     const reserveAmount = availableToDeployRaw * config.RISK.reservePct;
     const availableToDeploy = Math.max(0, availableToDeployRaw - reserveAmount);
 
-    // Resolve market — Jupiter Perps uses asset symbols (SOL, BTC, ETH)
+    // Resolve market — check against all supported perps markets (Jupiter + Flash)
     const underlying = token.underlying?.toUpperCase();
-    const market = underlying && config.PERPS_MARKETS.includes(underlying)
+    const market = underlying && config.ALL_PERPS_MARKETS.includes(underlying)
       ? underlying
       : null;
 
     if (!market) {
-      logger.warn('No Jupiter Perps market for token, skipping', { mint, underlying: token.underlying });
+      logger.warn('No perps market available for token, skipping', { mint, underlying: token.underlying });
       return null;
     }
 
@@ -95,7 +95,10 @@ export async function managePositionForToken(mint) {
     // sizeUsd = collateralUsd * leverage (what the position is worth after leverage)
     const collateralUsd = deployAmount * solPrice;
     const leverage = token.leverage || config.RISK.leverage || 100;
-    const sizeUsd = collateralUsd * leverage;
+    // Cap leverage for Flash Trade markets (max 100x)
+    const maxLev = perps.getMaxLeverage(market);
+    const effectiveLeverage = Math.min(leverage, maxLev);
+    const sizeUsd = collateralUsd * effectiveLeverage;
 
     // Token can be configured as long or short
     const direction = token.side || 'long';

@@ -45,21 +45,22 @@ function renderPopularTokens() {
   const grid = document.getElementById('popular-tokens-grid');
   if (!grid) return;
 
-  const perpsTokens = POPULAR_TOKENS.filter(t => t.hasPerps);
-  const otherTokens = POPULAR_TOKENS.filter(t => !t.hasPerps);
+  const jupiterTokens = POPULAR_TOKENS.filter(t => t.provider === 'jupiter');
+  const flashTokens = POPULAR_TOKENS.filter(t => t.provider === 'flash');
 
   grid.innerHTML = `
-    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;">⚡ Available for Long / Short</div>
-    ${perpsTokens.map(t => `
-      <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}">
-        <div class="token-perps-badge">PERPS</div>
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;">⚡ Jupiter Perps — up to 250x</div>
+    ${jupiterTokens.map(t => `
+      <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}" data-provider="${t.provider}" data-maxlev="${t.maxLev}">
+        <div class="token-perps-badge">JUPITER</div>
         <div class="token-symbol">${t.symbol}</div>
         <div class="token-label">${t.name}</div>
       </div>
     `).join('')}
-    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-tertiary);margin-top:16px;margin-bottom:4px;">Coming Soon</div>
-    ${otherTokens.map(t => `
-      <div class="popular-token-card glass-card no-perps" data-symbol="${t.symbol}">
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent-secondary);margin-top:16px;margin-bottom:4px;">⚡ Flash Trade — up to 100x</div>
+    ${flashTokens.map(t => `
+      <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}" data-provider="${t.provider}" data-maxlev="${t.maxLev}">
+        <div class="token-perps-badge" style="color:var(--accent-secondary);">FLASH</div>
         <div class="token-symbol">${t.symbol}</div>
         <div class="token-label">${t.name}</div>
       </div>
@@ -68,15 +69,13 @@ function renderPopularTokens() {
 
   grid.querySelectorAll('.popular-token-card').forEach(card => {
     card.addEventListener('click', () => {
-      const isNoPerps = card.classList.contains('no-perps');
-      if (isNoPerps) {
-        showToast(`${card.getAttribute('data-symbol')} perps not available yet — choose SOL, BTC, or ETH`, 'warning');
-        return;
-      }
-
       grid.querySelectorAll('.popular-token-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       selectedToken = card.getAttribute('data-symbol');
+
+      // Update leverage caps based on provider
+      const maxLev = parseInt(card.getAttribute('data-maxlev')) || 100;
+      updateLeverageCaps(maxLev);
 
       const nameInput = document.getElementById('derivative-name');
       if (nameInput && !nameInput.value) {
@@ -87,6 +86,31 @@ function renderPopularTokens() {
       }
     });
   });
+}
+
+function updateLeverageCaps(maxLev) {
+  const leverageBtns = document.querySelectorAll('.leverage-btn');
+  leverageBtns.forEach(btn => {
+    const lev = parseInt(btn.getAttribute('data-leverage'));
+    if (lev > maxLev) {
+      btn.classList.add('disabled');
+      btn.style.opacity = '0.3';
+      btn.style.pointerEvents = 'none';
+    } else {
+      btn.classList.remove('disabled');
+      btn.style.opacity = '1';
+      btn.style.pointerEvents = 'auto';
+    }
+  });
+
+  // If current selected leverage exceeds max, reset to max
+  if (selectedLeverage > maxLev) {
+    selectedLeverage = maxLev;
+    leverageBtns.forEach(btn => {
+      const lev = parseInt(btn.getAttribute('data-leverage'));
+      btn.classList.toggle('active', lev === maxLev);
+    });
+  }
 }
 
 function setupTokenSearch() {
