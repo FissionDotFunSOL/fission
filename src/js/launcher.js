@@ -49,7 +49,7 @@ function renderPopularTokens() {
   const flashTokens = POPULAR_TOKENS.filter(t => t.provider === 'flash');
 
   grid.innerHTML = `
-    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;">⚡ Jupiter Perps — up to 250x</div>
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;">JUPITER PERPS — UP TO 250X</div>
     ${jupiterTokens.map(t => `
       <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}" data-provider="${t.provider}" data-maxlev="${t.maxLev}">
         <div class="token-perps-badge">JUPITER</div>
@@ -58,7 +58,7 @@ function renderPopularTokens() {
       </div>
     `).join('')}
     
-    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent-secondary);margin-top:16px;margin-bottom:4px;">⚡ Flash Trade — up to 100x</div>
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent-secondary);margin-top:16px;margin-bottom:4px;">FLASH TRADE — UP TO 100X</div>
     <div style="grid-column:1/-1; width:100%; position:relative;">
       <select id="flash-token-select" class="glass-input" style="width:100%; padding: 16px; background: rgba(0,0,0,0.5); border: 1px solid var(--border-accent); color: var(--accent-secondary); font-family: var(--font-mono); font-size: 1rem; border-radius: 4px; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none;">
         <option value="" disabled selected>-- Select a Flash Trade Market --</option>
@@ -117,28 +117,42 @@ function renderPopularTokens() {
 }
 
 function updateLeverageCaps(maxLev) {
-  const leverageBtns = document.querySelectorAll('.leverage-btn');
-  leverageBtns.forEach(btn => {
-    const lev = parseInt(btn.getAttribute('data-leverage'));
-    if (lev > maxLev) {
-      btn.classList.add('disabled');
-      btn.style.opacity = '0.3';
-      btn.style.pointerEvents = 'none';
-    } else {
-      btn.classList.remove('disabled');
-      btn.style.opacity = '1';
-      btn.style.pointerEvents = 'auto';
-    }
-  });
+  const container = document.getElementById('leverage-options');
+  const levLabel = document.getElementById('selected-leverage');
+  if (!container) return;
 
-  // If current selected leverage exceeds max, reset to max
+  // Define all possible leverage tiers
+  const allTiers = [25, 50, 100, 150, 200, 250];
+  const validTiers = allTiers.filter(t => t <= maxLev);
+
+  // Regenerate buttons with only valid tiers
+  container.innerHTML = validTiers.map(lev => {
+    const isActive = lev === Math.min(selectedLeverage, maxLev);
+    const cls = isActive ? 'btn btn-primary btn-sm leverage-btn active' : 'btn btn-outline btn-sm leverage-btn';
+    return `<button class="${cls}" data-lev="${lev}" style="font-family:var(--font-mono);min-width:52px;">${lev}x</button>`;
+  }).join('');
+
+  // If current leverage exceeds max, clamp it
   if (selectedLeverage > maxLev) {
     selectedLeverage = maxLev;
-    leverageBtns.forEach(btn => {
-      const lev = parseInt(btn.getAttribute('data-leverage'));
-      btn.classList.toggle('active', lev === maxLev);
-    });
+    if (levLabel) levLabel.textContent = `${maxLev}x`;
   }
+
+  // Re-bind click events
+  container.querySelectorAll('.leverage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lev = parseInt(btn.getAttribute('data-lev'));
+      if (isNaN(lev)) return;
+      selectedLeverage = lev;
+      container.querySelectorAll('.leverage-btn').forEach(b => {
+        b.classList.remove('active', 'btn-primary');
+        b.classList.add('btn-outline');
+      });
+      btn.classList.add('active', 'btn-primary');
+      btn.classList.remove('btn-outline');
+      if (levLabel) levLabel.textContent = `${lev}x`;
+    });
+  });
 }
 
 function setupTokenSearch() {
