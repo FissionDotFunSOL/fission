@@ -98,11 +98,18 @@ function derivePositionPDA(wallet, custodyKey, collateralCustodyKey, side) {
   return pda;
 }
 
-function derivePositionRequestPDA(wallet, positionPDA, counter) {
+function derivePositionRequestPDA(positionPDA, counter, requestChange) {
   const counterBuf = Buffer.alloc(8);
   counterBuf.writeBigUInt64LE(BigInt(counter));
+  // requestChange: 1 = increase, 2 = decrease
+  const requestChangeByte = requestChange === 'increase' ? 1 : 2;
   const [pda] = PublicKey.findProgramAddressSync(
-    [Buffer.from('position_request'), positionPDA.toBuffer(), counterBuf],
+    [
+      Buffer.from('position_request'),
+      positionPDA.toBuffer(),
+      counterBuf,
+      Buffer.from([requestChangeByte]),
+    ],
     JUP_PERPS_PROGRAM_ID,
   );
   return pda;
@@ -248,8 +255,8 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
 
     const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, side);
     const perpetualsPDA = derivePerpetualsPDA();
-    const counter = Date.now();
-    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
+    const counter = Math.floor(Math.random() * 1_000_000_000);
+    const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'increase');
 
     const fundingATA = await getAssociatedTokenAddress(collateralMint, wallet);
     const positionRequestATA = await getAssociatedTokenAddress(collateralMint, positionRequestPDA, true);
@@ -380,8 +387,8 @@ export async function closePosition(market) {
     const wallet = config.protocolKeypair.publicKey;
     const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
-    const counter = Date.now();
-    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
+    const counter = Math.floor(Math.random() * 1_000_000_000);
+    const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'decrease');
 
     const isShort = pnlInfo.side === 'short';
     const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
@@ -459,8 +466,8 @@ export async function reducePosition(market, pct) {
     const custodyKey = CUSTODY_ACCOUNTS[market];
     const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
-    const counter = Date.now();
-    const positionRequestPDA = derivePositionRequestPDA(wallet, positionPDA, counter);
+    const counter = Math.floor(Math.random() * 1_000_000_000);
+    const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'decrease');
 
     const isShort = pnlInfo.side === 'short';
     const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
