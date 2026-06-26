@@ -5,7 +5,7 @@ import config from './config.js';
 import logger from './utils/logger.js';
 import routes from './api/routes.js';
 import { startScheduler, stopScheduler } from './workers/scheduler.js';
-import { shutdown as shutdownPerps } from './services/jupiter-perps.js';
+import { shutdown as shutdownPerps } from './services/perps-router.js';
 
 // ---------------------------------------------------------------------------
 // Express app

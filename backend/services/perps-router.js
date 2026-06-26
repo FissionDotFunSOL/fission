@@ -2,6 +2,7 @@ import config from '../config.js';
 import logger from '../utils/logger.js';
 import * as jupiterPerps from './jupiter-perps.js';
 import * as flashPerps from './flash-perps.js';
+import { getSolBalance } from './solana.js';
 
 // ---------------------------------------------------------------------------
 // Perps Router
@@ -76,6 +77,36 @@ export async function closePosition(market, side = 'long') {
 }
 
 /**
+ * Reduce a position by a percentage. Routes to correct provider.
+ * Flash Trade doesn't support partial reduces natively — falls back to
+ * closing the full position if reduction is >= 50%.
+ */
+export async function reducePosition(market, pct, side = 'long') {
+  const provider = getProvider(market);
+
+  if (!provider) {
+    logger.error('No perps provider for market (reducePosition)', { market });
+    return null;
+  }
+
+  logger.info('Routing reducePosition', { market, provider, side, pct });
+
+  if (provider === 'jupiter') {
+    return jupiterPerps.reducePosition(market, pct);
+  }
+
+  // Flash Trade: no partial reduce API — close the full position on large reductions
+  if (pct >= 0.5) {
+    logger.warn('Flash Trade does not support partial reduces — closing full position', { market, pct });
+    return flashPerps.closePosition(market, side);
+  }
+
+  // For small reductions on Flash, log and skip (position stays open)
+  logger.info('Flash Trade: skipping small reduction (no partial reduce support)', { market, pct });
+  return null;
+}
+
+/**
  * Get position PnL. Routes to correct provider.
  */
 export async function getPositionPnl(market, side = 'long') {
@@ -90,3 +121,24 @@ export async function getPositionPnl(market, side = 'long') {
   }
   return flashPerps.getPositionPnl(market, side);
 }
+
+/**
+ * Get free collateral (wallet SOL balance as proxy).
+ */
+export async function getFreeCollateral() {
+  try {
+    if (!config.PROTOCOL_PUBKEY) return 0;
+    return await getSolBalance(config.PROTOCOL_PUBKEY);
+  } catch (err) {
+    logger.error('getFreeCollateral failed', { error: err.message });
+    return 0;
+  }
+}
+
+/**
+ * Shutdown — clean up connections.
+ */
+export async function shutdown() {
+  await jupiterPerps.shutdown();
+}
+
