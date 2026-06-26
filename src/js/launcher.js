@@ -10,6 +10,7 @@ let currentStep = 0;
 let selectedToken = null;
 let derivativeName = '';
 let selectedDirection = 'long';
+let selectedLeverage = 100;
 
 export function initLauncher() {
   const wizard = document.getElementById('launch-wizard');
@@ -22,6 +23,7 @@ export function initLauncher() {
   setupNameInput();
   setupProtocolWallet();
   setupDirectionSelector();
+  setupLeverageSelector();
   updateStepUI();
 }
 
@@ -185,6 +187,7 @@ async function handleVerifyAndRegister() {
         mint: address,
         underlying: selectedToken || null,
         side: selectedDirection,
+        leverage: selectedLeverage,
       }),
     });
 
@@ -384,5 +387,30 @@ function setupDirectionSelector() {
       dirLabel.textContent = 'SHORT';
       dirLabel.style.color = 'var(--red, #ff3366)';
     }
+  });
+}
+
+function setupLeverageSelector() {
+  const container = document.getElementById('leverage-options');
+  const levLabel = document.getElementById('selected-leverage');
+  if (!container) return;
+
+  container.querySelectorAll('.leverage-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const lev = parseInt(btn.getAttribute('data-lev'));
+      if (isNaN(lev)) return;
+
+      selectedLeverage = lev;
+
+      // Update active states
+      container.querySelectorAll('.leverage-btn').forEach(b => {
+        b.classList.remove('active', 'btn-primary');
+        b.classList.add('btn-outline');
+      });
+      btn.classList.add('active', 'btn-primary');
+      btn.classList.remove('btn-outline');
+
+      if (levLabel) levLabel.textContent = `${lev}x`;
+    });
   });
 }

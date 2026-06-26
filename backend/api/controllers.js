@@ -55,7 +55,7 @@ export async function getToken(req, res) {
  */
 export async function registerToken(req, res) {
   try {
-    const { mint, underlying, side } = req.body;
+    const { mint, underlying, side, leverage } = req.body;
 
     // ── Input validation ──
     if (!mint || typeof mint !== 'string') {
@@ -100,6 +100,15 @@ export async function registerToken(req, res) {
       });
     }
 
+    // Validate leverage (1–250, Jupiter Perps max is 250x)
+    const tokenLeverage = Math.min(250, Math.max(1, parseInt(leverage) || config.RISK.leverage));
+    if (isNaN(tokenLeverage) || tokenLeverage < 1 || tokenLeverage > 250) {
+      return res.status(400).json({
+        error: 'Invalid leverage',
+        reason: 'leverage must be between 1 and 250',
+      });
+    }
+
     // ── Check if already registered ──
     const existing = await db.getToken(trimmedMint);
     if (existing) {
@@ -129,7 +138,7 @@ export async function registerToken(req, res) {
       underlying: underlyingSymbol,
       perpsMarket,
       side: tokenSide,
-      leverage: config.RISK.leverage,
+      leverage: tokenLeverage,
       sharingConfigPDA: verification.pda,
       createdAt: Date.now(),
       status: 'active',

@@ -94,7 +94,7 @@ export async function managePositionForToken(mint) {
     // deployAmount = collateral in SOL
     // sizeUsd = collateralUsd * leverage (what the position is worth after leverage)
     const collateralUsd = deployAmount * solPrice;
-    const leverage = config.RISK.leverage || 100;
+    const leverage = token.leverage || config.RISK.leverage || 100;
     const sizeUsd = collateralUsd * leverage;
 
     // Token can be configured as long or short

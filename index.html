@@ -282,7 +282,20 @@
               ▼ SHORT
             </button>
           </div>
-          <p style="margin-top:8px;font-size:0.75rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">
+
+          <div class="leverage-selector" style="margin-top:16px;">
+            <label style="display:block;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px;">Leverage</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;" id="leverage-options">
+              <button class="btn btn-outline btn-sm leverage-btn" data-lev="25" style="font-family:var(--font-mono);min-width:52px;">25x</button>
+              <button class="btn btn-outline btn-sm leverage-btn" data-lev="50" style="font-family:var(--font-mono);min-width:52px;">50x</button>
+              <button class="btn btn-primary btn-sm leverage-btn active" data-lev="100" style="font-family:var(--font-mono);min-width:52px;">100x</button>
+              <button class="btn btn-outline btn-sm leverage-btn" data-lev="150" style="font-family:var(--font-mono);min-width:52px;">150x</button>
+              <button class="btn btn-outline btn-sm leverage-btn" data-lev="200" style="font-family:var(--font-mono);min-width:52px;">200x</button>
+              <button class="btn btn-outline btn-sm leverage-btn" data-lev="250" style="font-family:var(--font-mono);min-width:52px;">250x</button>
+            </div>
+          </div>
+
+          <p style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);font-family:'JetBrains Mono',monospace;">
             Selected: <span id="selected-direction" style="color:var(--accent);">LONG</span> @ <span id="selected-leverage" style="color:var(--accent);">100x</span> leverage
           </p>
 
