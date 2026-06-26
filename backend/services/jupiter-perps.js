@@ -194,7 +194,25 @@ export async function getPositionPnl(market) {
 
     let pnl = 0;
     try {
-      const solPrice = await getSolPrice();
+      let solPrice = 0;
+      try {
+        solPrice = await getSolPrice();
+      } catch {
+        // Jupiter rate-limited, try CoinGecko as fallback
+      }
+
+      if (!solPrice || solPrice <= 0) {
+        try {
+          const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+          if (cgRes.ok) {
+            const cgData = await cgRes.json();
+            solPrice = cgData?.solana?.usd || 0;
+          }
+        } catch {
+          // Both price sources failed
+        }
+      }
+
       const currentPrice = market === 'SOL' ? solPrice
         : market === 'BTC' ? solPrice * 400
         : market === 'ETH' ? solPrice * 16
@@ -207,8 +225,8 @@ export async function getPositionPnl(market) {
           ? sizeUsd * ((currentPrice - entry) / entry)
           : sizeUsd * ((entry - currentPrice) / entry);
       }
-    } catch {
-      // Can't compute unrealised PnL without price, return 0
+    } catch (priceErr) {
+      logger.warn('PnL price calculation failed', { market, error: priceErr.message });
     }
 
     const sideFromData = data[152] === 2 ? 'short' : 'long';

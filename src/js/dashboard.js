@@ -188,7 +188,7 @@ function renderTable() {
       <td style="font-family:var(--font-mono);color:var(--accent);">${row.leverage}x</td>
       <td style="font-family:var(--font-mono);">${row.entry > 0 ? '$' + formatNumber(row.entry) : '—'}</td>
       <td style="color:${pnlColor};font-family:var(--font-mono);">
-        ${row.pnl !== 0 ? pnlSign + formatCurrency(row.pnl) : '—'}
+        ${row.entry > 0 || row.sizeUsd > 0 ? pnlSign + formatCurrency(row.pnl) : '—'}
       </td>
       <td style="font-family:var(--font-mono);">${row.sizeUsd > 0 ? formatCurrency(row.sizeUsd) : '—'}</td>
     </tr>`;
@@ -253,7 +253,8 @@ function openTokenModal(token) {
   const pnlEl = document.getElementById('modal-pnl');
   if (pnlEl) {
     const sign = token.pnl >= 0 ? '+' : '';
-    pnlEl.textContent = token.pnl !== 0 ? `${sign}${formatCurrency(token.pnl)}` : '—';
+    const hasPosData = token.entry > 0 || token.sizeUsd > 0;
+    pnlEl.textContent = hasPosData ? `${sign}${formatCurrency(token.pnl)}` : '—';
     pnlEl.style.color = token.pnl >= 0 ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
   }
 
