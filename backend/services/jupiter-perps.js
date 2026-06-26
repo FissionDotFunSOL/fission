@@ -67,9 +67,9 @@ function anchorDiscriminator(instructionName) {
   return hash.slice(0, 8);
 }
 
-// camelCase names matching the on-chain program
-const DISC_INCREASE = anchorDiscriminator('createIncreasePositionMarketRequest');
-const DISC_DECREASE = anchorDiscriminator('createDecreasePositionMarketRequest');
+// camelCase in IDL but snake_case for discriminator hash (confirmed from on-chain tx data)
+const DISC_INCREASE = anchorDiscriminator('create_increase_position_market_request');
+const DISC_DECREASE = anchorDiscriminator('create_decrease_position_market_request');
 
 // ---------------------------------------------------------------------------
 // PDA derivation
