@@ -6,7 +6,9 @@
 
 export function initParticles() {
   const canvas = document.getElementById('particle-canvas');
-  if (!canvas) return;
+  if (canvas) canvas.style.display = 'none';
+  return;
+}
 
   const ctx = canvas.getContext('2d');
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
