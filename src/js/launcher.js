@@ -43,15 +43,35 @@ function renderPopularTokens() {
   const grid = document.getElementById('popular-tokens-grid');
   if (!grid) return;
 
-  grid.innerHTML = POPULAR_TOKENS.map(t => `
-    <div class="popular-token-card glass-card" data-symbol="${t.symbol}">
-      <div class="token-symbol">${t.symbol}</div>
-      <div class="token-label">${t.name}</div>
-    </div>
-  `).join('');
+  const perpsTokens = POPULAR_TOKENS.filter(t => t.hasPerps);
+  const otherTokens = POPULAR_TOKENS.filter(t => !t.hasPerps);
+
+  grid.innerHTML = `
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--accent);margin-bottom:4px;">⚡ Available for Long / Short</div>
+    ${perpsTokens.map(t => `
+      <div class="popular-token-card glass-card perps-available" data-symbol="${t.symbol}">
+        <div class="token-perps-badge">PERPS</div>
+        <div class="token-symbol">${t.symbol}</div>
+        <div class="token-label">${t.name}</div>
+      </div>
+    `).join('')}
+    <div class="token-section-label" style="grid-column:1/-1;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-tertiary);margin-top:16px;margin-bottom:4px;">Coming Soon</div>
+    ${otherTokens.map(t => `
+      <div class="popular-token-card glass-card no-perps" data-symbol="${t.symbol}">
+        <div class="token-symbol">${t.symbol}</div>
+        <div class="token-label">${t.name}</div>
+      </div>
+    `).join('')}
+  `;
 
   grid.querySelectorAll('.popular-token-card').forEach(card => {
     card.addEventListener('click', () => {
+      const isNoPerps = card.classList.contains('no-perps');
+      if (isNoPerps) {
+        showToast(`${card.getAttribute('data-symbol')} perps not available yet — choose SOL, BTC, or ETH`, 'warning');
+        return;
+      }
+
       grid.querySelectorAll('.popular-token-card').forEach(c => c.classList.remove('selected'));
       card.classList.add('selected');
       selectedToken = card.getAttribute('data-symbol');

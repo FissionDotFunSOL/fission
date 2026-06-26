@@ -318,6 +318,39 @@
   color: var(--text-tertiary);
 }
 
+/* Perps badge */
+.token-perps-badge {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  border: 1px solid var(--accent-dim);
+  border-radius: var(--radius);
+  padding: 2px 6px;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+.popular-token-card.perps-available {
+  border-color: var(--border-accent);
+}
+.popular-token-card.perps-available:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 24px rgba(0, 255, 136, 0.1);
+}
+
+/* No perps — dimmed */
+.popular-token-card.no-perps {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.popular-token-card.no-perps:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--border);
+  opacity: 0.5;
+}
+
 /* ── Direction Buttons ── */
 .direction-btn {
   transition: all var(--speed) var(--ease) !important;
