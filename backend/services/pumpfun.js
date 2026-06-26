@@ -1,4 +1,5 @@
 import { PublicKey } from '@solana/web3.js';
+import { createRequire } from 'module';
 import config from '../config.js';
 import logger from '../utils/logger.js';
 import { getConnection, sendTx, getAccountInfo } from './solana.js';
@@ -16,7 +17,11 @@ let _PUMP_FEE_PROGRAM_ID = null;
 async function loadSdk() {
   if (_sdkLoaded) return;
   try {
-    const sdk = await import('@pump-fun/pump-sdk');
+    // Use createRequire to load as CJS — ESM dynamic import crashes on Railway
+    // because the SDK's internal Anchor setup runs with null connection during
+    // module initialization
+    const require = createRequire(import.meta.url);
+    const sdk = require('@pump-fun/pump-sdk');
     _feeSharingConfigPda = sdk.feeSharingConfigPda;
     _isSharingConfigEditable = sdk.isSharingConfigEditable;
     _hasCoinCreatorMigratedToSharingConfig = sdk.hasCoinCreatorMigratedToSharingConfig;
