@@ -66,11 +66,13 @@ async function getPerpsProgram() {
   try {
     const require = createRequire(import.meta.url);
     const { Program, AnchorProvider } = require('@coral-xyz/anchor');
-    const { PublicKey: CjsPublicKey } = require('@solana/web3.js');
+    const { PublicKey: CjsPublicKey, Connection: CjsConnection } = require('@solana/web3.js');
 
-    const conn = getConnection();
+    // Create a CJS Connection — the existing ESM connection may cause issues
+    const rpcUrl = config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+    const conn = new CjsConnection(rpcUrl, 'confirmed');
 
-    // Use CJS PublicKey for the wallet — Anchor needs matching class instances
+    // Use CJS PublicKey for the wallet
     const walletPubkey = config.protocolKeypair?.publicKey
       ? new CjsPublicKey(config.protocolKeypair.publicKey.toBase58())
       : CjsPublicKey.default;
@@ -86,20 +88,20 @@ async function getPerpsProgram() {
       skipPreflight: false,
     });
 
-    // Convert program ID to CJS PublicKey
-    const programId = new CjsPublicKey(JUP_PERPS_PROGRAM_ID.toBase58());
+    // Use string for program ID — Anchor handles string→PublicKey internally
+    const programIdStr = JUP_PERPS_PROGRAM_ID.toBase58();
 
-    const idl = await Program.fetchIdl(programId, provider);
+    const idl = await Program.fetchIdl(programIdStr, provider);
     if (!idl) throw new Error('Could not fetch Jupiter Perps IDL from chain');
 
-    _program = new Program(idl, programId, provider);
+    _program = new Program(idl, programIdStr, provider);
     logger.info('Jupiter Perps Anchor program loaded', {
       instructionCount: idl.instructions.length,
     });
 
     return _program;
   } catch (err) {
-    logger.error('Failed to load Jupiter Perps program', { error: err.message });
+    logger.error('Failed to load Jupiter Perps program', { error: err.message, stack: err.stack });
     throw err;
   }
 }
