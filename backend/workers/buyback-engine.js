@@ -59,14 +59,18 @@ export async function buybackFission(mint) {
     const swapResult = await swapSolForToken(config.FISSION_TOKEN_MINT, availableSol);
 
     // Burn the FISSION tokens received
-    const balance = await getTokenBalance(config.protocolKeypair.publicKey, config.FISSION_TOKEN_MINT);
     let burnSig = null;
     let tokensBurned = 0;
 
-    if (balance > 0) {
-      burnSig = await burnTokens(config.FISSION_TOKEN_MINT, balance);
-      tokensBurned = balance;
-      logger.info('FISSION tokens burned', { tokensBurned: balance, burnSig });
+    try {
+      const balance = await getTokenBalance(config.protocolKeypair.publicKey, config.FISSION_TOKEN_MINT);
+      if (balance > 0) {
+        burnSig = await burnTokens(config.FISSION_TOKEN_MINT, balance);
+        tokensBurned = balance;
+        logger.info('FISSION tokens burned', { tokensBurned: balance, burnSig });
+      }
+    } catch (burnErr) {
+      logger.error('FISSION burn step failed (swap succeeded)', { error: burnErr.message });
     }
 
     // Record buyback

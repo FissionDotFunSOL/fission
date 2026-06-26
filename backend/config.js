@@ -41,7 +41,7 @@ const FEE_SPLIT = {
 const RISK = {
   maxDrawdownPct:       parseFloat(process.env.MAX_DRAWDOWN_PCT) || 0.80,
   circuitBreakerPct:    parseFloat(process.env.CIRCUIT_BREAKER_PCT) || 0.90,
-  reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.0,
+  reservePct:           parseFloat(process.env.RESERVE_PCT) || 0.05,
   takeProfitPct:        parseFloat(process.env.TAKE_PROFIT_PCT) || 0.50,
   takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.30,
   drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.25,

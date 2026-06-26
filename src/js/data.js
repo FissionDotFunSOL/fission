@@ -36,12 +36,13 @@ export const MOCK_DASHBOARD_DATA = [
   {
     token: 'FISSION_SOL',
     linkedTo: 'SOL',
-    volume24h: 0,
-    fees24h: 0,
-    positionSize: 0,
+    side: 'long',
+    leverage: 100,
+    entry: 0,
+    sizeUsd: 0,
+    collateralUsd: 0,
+    deployedSol: 0,
     pnl: 0,
-    pnlPercent: 0,
-    buybacks: 0,
     status: 'pending',
   },
 ];

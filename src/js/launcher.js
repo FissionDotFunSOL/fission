@@ -340,7 +340,7 @@ function setupCopyButtons() {
 }
 
 function updateStepUI() {
-  document.querySelectorAll('.wizard-step-indicator').forEach((ind, i) => {
+  document.querySelectorAll('.wizard-step-dot').forEach((ind, i) => {
     ind.classList.remove('active', 'completed');
     if (i === currentStep) ind.classList.add('active');
     if (i < currentStep) ind.classList.add('completed');
@@ -384,5 +384,27 @@ function setupDirectionSelector() {
       dirLabel.textContent = 'SHORT';
       dirLabel.style.color = 'var(--red, #ff3366)';
     }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Mobile hamburger menu toggle
+// ---------------------------------------------------------------------------
+export function initHamburger() {
+  const btn = document.getElementById('hamburger');
+  const nav = document.getElementById('header-nav');
+  if (!btn || !nav) return;
+
+  btn.addEventListener('click', () => {
+    const open = nav.classList.toggle('open');
+    btn.setAttribute('aria-expanded', String(open));
+  });
+
+  // Close menu when a nav link is clicked
+  nav.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', () => {
+      nav.classList.remove('open');
+      btn.setAttribute('aria-expanded', 'false');
+    });
   });
 }

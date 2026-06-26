@@ -228,6 +228,7 @@ export async function getStats(_req, res) {
     const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0);
     const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0);
     const totalBurned      = buybacks.reduce((sum, b) => sum + (b.tokensBurned || 0), 0);
+    const totalPnl         = positions.reduce((sum, p) => sum + (p.pnl || 0), 0);
 
     res.json({
       stats: {
@@ -236,6 +237,7 @@ export async function getStats(_req, res) {
         openPositions: positions.length,
         totalRuns: runs.length,
         totalFeesClaimed,
+        totalPnl,
         totalBuybackSol,
         totalBurned,
         uptime: process.uptime(),

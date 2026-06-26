@@ -31,10 +31,18 @@ export async function claimFeesForToken(mint) {
       return null;
     }
 
-    // Snapshot balance after (small delay for RPC propagation)
-    await new Promise((r) => setTimeout(r, 2000));
-    const balanceAfter = await getSolBalance(config.PROTOCOL_PUBKEY);
+    // Wait for confirmed transaction before measuring balance delta
+    // This is more reliable than a fixed 2-second delay
+    try {
+      const { Connection } = await import('@solana/web3.js');
+      const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+      await conn.confirmTransaction(txSig, 'confirmed');
+    } catch (confirmErr) {
+      logger.warn('Transaction confirmation wait failed, using fallback delay', { error: confirmErr.message });
+      await new Promise((r) => setTimeout(r, 4000));
+    }
 
+    const balanceAfter = await getSolBalance(config.PROTOCOL_PUBKEY);
     const feesClaimed = Math.max(0, balanceAfter - balanceBefore);
 
     // Compute split

@@ -201,13 +201,14 @@
 }
 
 .section-label {
-  font-family: var(--font-mono);
-  font-size: 0.6rem;
-  letter-spacing: 0.3em;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.15em;
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: 12px;
   display: block;
+  opacity: 0.8;
 }
 
 .section-title {
@@ -621,10 +622,30 @@
 .audience-card {
   padding: 48px 40px;
   border: 1px solid var(--border);
-  transition: background var(--speed) var(--ease);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: all var(--speed) var(--ease);
+  position: relative;
+}
+.audience-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary, var(--accent)));
+  opacity: 0;
+  transition: opacity var(--speed) var(--ease);
 }
 .audience-card:first-child { border-right: none; }
-.audience-card:hover { background: var(--bg-card); }
+.audience-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--border-strong);
+  box-shadow: 0 0 30px rgba(0, 255, 136, 0.03);
+}
+.audience-card:hover::before { opacity: 1; }
 
 .audience-title {
   font-family: var(--font-display);
