@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/FissionDotFun/fission/actions/workflows/ci.yml"><img src="https://github.com/FissionDotFun/fission/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/FissionDotFun/fission/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
-  <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/node-18%2B-brightgreen.svg" alt="Node" /></a>
-  <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/solana-mainnet-9945FF.svg" alt="Solana" /></a>
-  <a href="https://github.com/FissionDotFun/fission"><img src="https://img.shields.io/badge/jupiter--perps-22D1EE.svg" alt="Jupiter Perps" /></a>
+  <a href="https://github.com/FissionDotFunSOL/fission/actions/workflows/ci.yml"><img src="https://github.com/FissionDotFunSOL/fission/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/FissionDotFunSOL/fission/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" /></a>
+  <a href="https://github.com/FissionDotFunSOL/fission"><img src="https://img.shields.io/badge/node-18%2B-brightgreen.svg" alt="Node" /></a>
+  <a href="https://github.com/FissionDotFunSOL/fission"><img src="https://img.shields.io/badge/solana-mainnet-9945FF.svg" alt="Solana" /></a>
+  <a href="https://github.com/FissionDotFunSOL/fission"><img src="https://img.shields.io/badge/jupiter--perps-22D1EE.svg" alt="Jupiter Perps" /></a>
 </p>
 
 <p align="center">

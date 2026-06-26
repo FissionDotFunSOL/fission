@@ -13,7 +13,7 @@ Thanks for your interest in contributing. This document outlines the process for
 
 ```bash
 # Clone the repo
-git clone https://github.com/FissionDotFun/fission.git
+git clone https://github.com/FissionDotFunSOL/fission.git
 cd fission
 
 # Frontend
