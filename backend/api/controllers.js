@@ -212,7 +212,31 @@ export async function registerToken(req, res) {
 export async function listPositions(_req, res) {
   try {
     const positions = await db.getAllPositions();
-    res.json({ positions });
+
+    // Enrich with live on-chain PnL data
+    const perps = await import('../services/perps-router.js');
+    const enriched = await Promise.all(positions.map(async (pos) => {
+      try {
+        if (!pos.market) return pos;
+        const pnlInfo = await perps.getPositionPnl(pos.market, pos.side || 'long');
+        if (pnlInfo.exists) {
+          return {
+            ...pos,
+            entry: pnlInfo.entry || pos.entry,
+            sizeUsd: pnlInfo.size || pos.sizeUsd,
+            collateralUsd: pnlInfo.collateralUsd || pos.collateralUsd,
+            pnl: pnlInfo.pnl || 0,
+            side: pnlInfo.side || pos.side,
+            positionExists: true,
+          };
+        }
+        return { ...pos, positionExists: false };
+      } catch {
+        return pos;
+      }
+    }));
+
+    res.json({ positions: enriched });
   } catch (err) {
     logger.error('listPositions error', { error: err.message });
     res.status(500).json({ error: 'Failed to fetch positions' });
