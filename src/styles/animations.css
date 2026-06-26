@@ -69,3 +69,13 @@
   color: var(--accent);
   font-weight: 400;
 }
+
+/* Stats counter pop */
+.number-pop {
+  animation: number-pop 0.3s var(--ease-spring);
+}
+@keyframes number-pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}

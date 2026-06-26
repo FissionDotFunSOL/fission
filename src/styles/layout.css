@@ -453,6 +453,29 @@
   letter-spacing: 0.05em;
 }
 
+.dashboard-empty {
+  text-align: center;
+  padding: 48px 20px;
+}
+.dashboard-empty-icon {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  color: var(--text-tertiary);
+  margin-bottom: 12px;
+}
+.dashboard-empty-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+.dashboard-empty-desc {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
 /* ═══════════════════════════════════════════════════════════
    STATS GRID
    ═══════════════════════════════════════════════════════════ */
