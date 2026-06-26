@@ -215,17 +215,26 @@ async function checkTokenRisk(token, freeCollateral) {
   }
 
   // -----------------------------------------------------------------------
-  // Check 3: Circuit breaker (50% underlying crash)
+  // Check 3: Circuit breaker (extreme adverse move)
+  // For longs: triggers on severe price crash
+  // For shorts: triggers on severe price surge
   // -----------------------------------------------------------------------
   if (pnlInfo.entry > 0 && pnlInfo.size !== 0) {
     const currentPrice = pnlInfo.entry + (pnlInfo.pnl / Math.abs(pnlInfo.size));
-    const priceDrop = (pnlInfo.entry - currentPrice) / pnlInfo.entry;
+    const side = position.side || token.side || 'long';
+    const isLong = side === 'long';
 
-    if (priceDrop >= config.RISK.circuitBreakerPct) {
+    // For longs: adverse move = price drops. For shorts: adverse move = price rises.
+    const adverseMove = isLong
+      ? (pnlInfo.entry - currentPrice) / pnlInfo.entry   // price crash (positive = bad for longs)
+      : (currentPrice - pnlInfo.entry) / pnlInfo.entry;   // price surge (positive = bad for shorts)
+
+    if (adverseMove >= config.RISK.circuitBreakerPct) {
       logger.warn('CIRCUIT BREAKER TRIGGERED', {
         mint,
         market,
-        priceDrop: (priceDrop * 100).toFixed(1) + '%',
+        side,
+        adverseMove: (adverseMove * 100).toFixed(1) + '%',
         entryPrice: pnlInfo.entry,
         currentPrice,
       });
@@ -252,7 +261,8 @@ async function checkTokenRisk(token, freeCollateral) {
           mint,
           market,
           alert: 'circuit-breaker',
-          priceDrop,
+          adverseMove,
+          side,
           action: 'closed-position',
           txSig: result?.txSig,
         };
