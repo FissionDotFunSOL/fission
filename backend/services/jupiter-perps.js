@@ -385,14 +385,14 @@ export async function closePosition(market) {
     }
 
     const wallet = config.protocolKeypair.publicKey;
+    const isShort = pnlInfo.side === 'short';
+    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
+    const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
+
     const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Math.floor(Math.random() * 1_000_000_000);
     const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'decrease');
-
-    const isShort = pnlInfo.side === 'short';
-    const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
-    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
 
     const receivingATA = await getAssociatedTokenAddress(receivingMint, wallet);
     const positionRequestATA = await getAssociatedTokenAddress(receivingMint, positionRequestPDA, true);
@@ -464,14 +464,14 @@ export async function reducePosition(market, pct) {
     const reduceSize = Math.abs(pnlInfo.size) * pct;
     const wallet = config.protocolKeypair.publicKey;
     const custodyKey = CUSTODY_ACCOUNTS[market];
+    const isShort = pnlInfo.side === 'short';
+    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
+    const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
+
     const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
     const perpetualsPDA = derivePerpetualsPDA();
     const counter = Math.floor(Math.random() * 1_000_000_000);
     const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'decrease');
-
-    const isShort = pnlInfo.side === 'short';
-    const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
-    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
 
     const receivingATA = await getAssociatedTokenAddress(receivingMint, wallet);
     const positionRequestATA = await getAssociatedTokenAddress(receivingMint, positionRequestPDA, true);
