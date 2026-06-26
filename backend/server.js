@@ -13,7 +13,17 @@ import { shutdown as shutdownPerps } from './services/jupiter-perps.js';
 const app = express();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: [
+    'https://fission.fun',
+    'https://www.fission.fun',
+    /\.vercel\.app$/,       // preview deploys
+    'http://localhost:5173', // local dev
+    'http://localhost:3000',
+  ],
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
 app.use(express.json());
 
 // Rate limiting

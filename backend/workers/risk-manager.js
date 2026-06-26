@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import * as perps from '../services/jupiter-perps.js';
+import * as perps from '../services/perps-router.js';
 import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { retry } from '../utils/helpers.js';
@@ -67,7 +67,7 @@ async function checkTokenRisk(token, freeCollateral) {
 
   // Resolve market from token underlying
   const underlying = token.underlying?.toUpperCase();
-  const market = underlying && config.PERPS_MARKETS.includes(underlying)
+  const market = underlying && config.ALL_PERPS_MARKETS.includes(underlying)
     ? underlying
     : null;
 

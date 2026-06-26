@@ -442,7 +442,8 @@ function setupDirectionSelector() {
   });
 
   shortBtn.addEventListener('click', () => {
-    selectedDirection = 'short';
+    // SHORT is disabled (coming soon) — prevent any state change
+    if (shortBtn.disabled) return;
     shortBtn.classList.add('active');
     shortBtn.classList.remove('btn-outline');
     shortBtn.classList.add('btn-primary');
