@@ -780,13 +780,21 @@
   font-size: 0.65rem;
   letter-spacing: 0.05em;
   color: var(--text-tertiary);
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  margin-right: 32px;
 }
-.ticker-item .name { color: var(--text-secondary); font-weight: 600; }
-.ticker-item .up { color: var(--green); }
-.ticker-item .down { color: var(--red); }
+.ticker-symbol { color: var(--text-secondary); font-weight: 600; }
+.ticker-price { color: var(--text-secondary); }
+.ticker-change { font-weight: 500; }
+.ticker-up { color: var(--green); }
+.ticker-down { color: var(--red); }
+.ticker-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
 
 /* ═══════════════════════════════════════════════════════════
    RESPONSIVE
