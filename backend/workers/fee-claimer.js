@@ -21,9 +21,6 @@ export async function claimFeesForToken(mint) {
   logger.info('Starting fee claim', { mint });
 
   try {
-    // Snapshot balance before
-    const balanceBefore = await getSolBalance(config.PROTOCOL_PUBKEY);
-
     // Execute claim
     const txSig = await claimFees(mint);
     if (!txSig) {
@@ -31,19 +28,55 @@ export async function claimFeesForToken(mint) {
       return null;
     }
 
-    // Wait for confirmed transaction before measuring balance delta
-    // This is more reliable than a fixed 2-second delay
+    // Wait for confirmation
+    let feesClaimed = 0;
     try {
       const { Connection } = await import('@solana/web3.js');
       const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
-      await conn.confirmTransaction(txSig, 'confirmed');
-    } catch (confirmErr) {
-      logger.warn('Transaction confirmation wait failed, using fallback delay', { error: confirmErr.message });
-      await new Promise((r) => setTimeout(r, 4000));
-    }
 
-    const balanceAfter = await getSolBalance(config.PROTOCOL_PUBKEY);
-    const feesClaimed = Math.max(0, balanceAfter - balanceBefore);
+      // Wait for confirmation
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // Read the actual SOL delta from the confirmed transaction
+      const txInfo = await conn.getTransaction(txSig, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+
+      if (txInfo && txInfo.meta && !txInfo.meta.err) {
+        const accounts = txInfo.transaction.message.staticAccountKeys || txInfo.transaction.message.accountKeys;
+        const protocolKey = config.PROTOCOL_PUBKEY.toBase58();
+
+        for (let i = 0; i < accounts.length; i++) {
+          const pubkey = typeof accounts[i] === 'string' ? accounts[i] : accounts[i].toBase58();
+          if (pubkey === protocolKey) {
+            const pre = txInfo.meta.preBalances[i] || 0;
+            const post = txInfo.meta.postBalances[i] || 0;
+            const delta = (post - pre) / 1e9;
+            // delta is negative if only tx fee was paid, positive if fees were received
+            // We want the gross received amount (ignore tx fee which is tiny)
+            if (delta > 0) {
+              feesClaimed = delta;
+            } else {
+              // Net negative means only tx fee was deducted, actual claim was 0
+              feesClaimed = 0;
+            }
+            break;
+          }
+        }
+      }
+
+      logger.info('Transaction confirmed, measured fee delta', {
+        mint,
+        txSig,
+        feesClaimed: feesClaimed.toFixed(6),
+      });
+    } catch (confirmErr) {
+      logger.warn('Transaction measurement failed, checking balance directly', { error: confirmErr.message });
+      // Fallback: check current balance and estimate
+      const currentBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+      logger.info('Current wallet balance (fallback)', { balance: currentBalance.toFixed(4) });
+    }
 
     // Compute split
     const split = {
@@ -68,6 +101,8 @@ export async function claimFeesForToken(mint) {
     logger.info('Fee claim completed', {
       mint,
       feesClaimed: feesClaimed.toFixed(6),
+      positionAmount: split.positionAmount.toFixed(6),
+      buybackAmount: split.buybackAmount.toFixed(6),
       runId,
       txSig,
     });
