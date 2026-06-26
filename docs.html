@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FISSION — Documentation</title>
+  <meta name="description" content="Official documentation for Fission Protocol — Perpetual-backed token derivatives on Solana." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #050505;
+      --surface: #0a0a0a;
+      --surface-2: #111111;
+      --border: rgba(255,255,255,0.06);
+      --border-accent: rgba(0,255,136,0.15);
+      --text: #e8e8e8;
+      --text-secondary: #999;
+      --text-muted: #555;
+      --accent: #00ff88;
+      --accent-dim: rgba(0,255,136,0.1);
+      --font-body: 'Space Grotesk', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-body);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* NAV */
+    .docs-nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: rgba(5,5,5,0.92);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .docs-nav-logo {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--accent);
+      text-decoration: none;
+      letter-spacing: 0.1em;
+    }
+    .docs-nav-links { display: flex; gap: 24px; }
+    .docs-nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.82rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+    .docs-nav-links a:hover { color: var(--accent); }
+
+    /* LAYOUT */
+    .docs-wrapper {
+      display: flex;
+      margin-top: 56px;
+      min-height: calc(100vh - 56px);
+    }
+
+    /* SIDEBAR */
+    .docs-sidebar {
+      width: 260px;
+      flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      padding: 32px 20px;
+      position: sticky;
+      top: 56px;
+      height: calc(100vh - 56px);
+      overflow-y: auto;
+    }
+    .docs-sidebar-section {
+      margin-bottom: 28px;
+    }
+    .docs-sidebar-title {
+      font-family: var(--font-mono);
+      font-size: 0.6rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .docs-sidebar a {
+      display: block;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.85rem;
+      padding: 6px 12px;
+      border-radius: 4px;
+      transition: all 0.15s;
+      margin-bottom: 2px;
+    }
+    .docs-sidebar a:hover {
+      color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    /* CONTENT */
+    .docs-content {
+      flex: 1;
+      max-width: 780px;
+      padding: 48px 56px 120px;
+    }
+
+    .docs-content h1 {
+      font-family: var(--font-mono);
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .docs-content .docs-subtitle {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      margin-bottom: 48px;
+    }
+
+    .docs-content h2 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 56px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .docs-content h2:first-of-type { margin-top: 0; }
+
+    .docs-content h3 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-top: 32px;
+      margin-bottom: 12px;
+    }
+
+    .docs-content p {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      font-size: 0.92rem;
+    }
+
+    .docs-content ul, .docs-content ol {
+      color: var(--text-secondary);
+      margin-bottom: 16px;
+      padding-left: 24px;
+      font-size: 0.92rem;
+    }
+    .docs-content li { margin-bottom: 8px; }
+
+    .docs-content code {
+      font-family: var(--font-mono);
+      background: var(--surface-2);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 0.82rem;
+      color: var(--accent);
+    }
+
+    .docs-content pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 20px;
+      margin-bottom: 20px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .docs-callout {
+      background: var(--accent-dim);
+      border-left: 3px solid var(--accent);
+      padding: 16px 20px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+    .docs-callout strong { color: var(--accent); }
+
+    .docs-warning {
+      background: rgba(255,180,0,0.06);
+      border-left: 3px solid #ffb400;
+      padding: 16px 20px;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 20px;
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+    .docs-warning strong { color: #ffb400; }
+
+    .docs-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0;
+    }
+
+    /* FOOTER */
+    .docs-footer {
+      border-top: 1px solid var(--border);
+      padding: 24px 56px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    @media (max-width: 768px) {
+      .docs-sidebar { display: none; }
+      .docs-content { padding: 32px 20px 80px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav class="docs-nav">
+    <a href="/" class="docs-nav-logo">FISSION</a>
+    <div class="docs-nav-links">
+      <a href="/">App</a>
+      <a href="/docs.html">Docs</a>
+      <a href="https://github.com/FissionDotFunSOL/fission" target="_blank">GitHub</a>
+      <a href="https://x.com/FissionDotFun" target="_blank">X</a>
+    </div>
+  </nav>
+
+  <div class="docs-wrapper">
+
+    <!-- SIDEBAR -->
+    <aside class="docs-sidebar">
+      <div class="docs-sidebar-section">
+        <div class="docs-sidebar-title">Protocol</div>
+        <a href="#overview">Overview</a>
+        <a href="#how-it-works">How It Works</a>
+        <a href="#fee-engine">Fee Engine</a>
+        <a href="#perpetual-strategy">Perpetual Strategy</a>
+        <a href="#buyback-burn">Buyback and Burn</a>
+        <a href="#supported-markets">Supported Markets</a>
+      </div>
+      <div class="docs-sidebar-section">
+        <div class="docs-sidebar-title">For Creators</div>
+        <a href="#getting-started">Getting Started</a>
+        <a href="#registration">Token Registration</a>
+        <a href="#fee-configuration">Fee Configuration</a>
+      </div>
+      <div class="docs-sidebar-section">
+        <div class="docs-sidebar-title">Technical</div>
+        <a href="#architecture">Architecture</a>
+        <a href="#smart-contracts">Smart Contracts</a>
+        <a href="#api-reference">API Reference</a>
+        <a href="#security">Security</a>
+      </div>
+      <div class="docs-sidebar-section">
+        <div class="docs-sidebar-title">Legal</div>
+        <a href="#terms">Terms of Service</a>
+        <a href="#privacy">Privacy Policy</a>
+        <a href="#risks">Risk Disclosure</a>
+        <a href="#disclaimer">Disclaimer</a>
+      </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <main class="docs-content">
+
+      <h1>Fission Protocol</h1>
+      <p class="docs-subtitle">Perpetual-Backed Token Derivatives on Solana</p>
+
+      <!-- ===== OVERVIEW ===== -->
+      <h2 id="overview">Overview</h2>
+      <p>
+        Fission Protocol is an autonomous on-chain system that transforms idle creator fees from Pump.fun tokens into leveraged perpetual positions on Solana. Profits generated from these positions are used to buy back and burn the creator's token, creating sustained deflationary pressure without requiring any action from the token creator or holders.
+      </p>
+      <div class="docs-callout">
+        <strong>Key Principle:</strong> Creator fees flow in. Leveraged yield flows out. Tokens get bought back and burned. Fully automated. Fully on-chain.
+      </div>
+
+      <!-- ===== HOW IT WORKS ===== -->
+      <h2 id="how-it-works">How It Works</h2>
+      <p>The protocol operates in a continuous three-phase cycle:</p>
+      <ol>
+        <li><strong>Fee Collection</strong> — When a creator deploys a token on Pump.fun and sets 100% creator fee share to the Fission protocol wallet, all trading fees from that token are automatically routed to Fission.</li>
+        <li><strong>Perpetual Deployment</strong> — Collected fees are deployed into leveraged perpetual positions on Jupiter Perps or Flash Trade, based on the creator's chosen asset, direction, and leverage level.</li>
+        <li><strong>Buyback and Burn</strong> — When positions are profitable, gains are harvested, used to buy the creator's token on the open market, and the purchased tokens are permanently burned by sending them to a dead address.</li>
+      </ol>
+
+      <!-- ===== FEE ENGINE ===== -->
+      <h2 id="fee-engine">Fee Engine</h2>
+      <p>
+        The Fission fee engine is a background service that monitors the Solana blockchain for incoming fee transfers to registered token wallets. When fees accumulate past a configurable threshold, they are automatically swept and converted to the appropriate collateral asset for perpetual position entry.
+      </p>
+      <h3>Fee Distribution</h3>
+      <ul>
+        <li><strong>85%</strong> — Deployed into the perpetual position as collateral</li>
+        <li><strong>10%</strong> — Protocol operational reserve (infrastructure, RPC, gas)</li>
+        <li><strong>5%</strong> — Protocol development fund</li>
+      </ul>
+
+      <!-- ===== PERPETUAL STRATEGY ===== -->
+      <h2 id="perpetual-strategy">Perpetual Strategy</h2>
+      <p>
+        Each registered token is assigned a perpetual trading strategy based on the parameters chosen during registration:
+      </p>
+      <ul>
+        <li><strong>Underlying Asset</strong> — The asset the perpetual position tracks (e.g., SOL, BTC, ETH, BONK).</li>
+        <li><strong>Direction</strong> — Currently LONG only. Short positions are under development.</li>
+        <li><strong>Leverage</strong> — From 25x up to 250x depending on the provider and market.</li>
+      </ul>
+      <div class="docs-warning">
+        <strong>Leverage Risk:</strong> Higher leverage amplifies both gains and losses. Positions can be liquidated if the market moves against the position significantly. The protocol includes automated risk management, but losses are possible.
+      </div>
+
+      <!-- ===== BUYBACK BURN ===== -->
+      <h2 id="buyback-burn">Buyback and Burn</h2>
+      <p>
+        When a perpetual position generates profit, the protocol automatically executes a buyback cycle:
+      </p>
+      <ol>
+        <li>Partial or full profit is withdrawn from the position.</li>
+        <li>Profit is routed through Jupiter aggregator to purchase the creator's token at the best available price.</li>
+        <li>Purchased tokens are sent to a verifiable burn address, permanently removing them from circulation.</li>
+      </ol>
+      <p>
+        All buyback transactions are recorded on-chain and visible in the Fission dashboard. The burn address is a standard Solana system-level dead address that cannot be recovered.
+      </p>
+
+      <!-- ===== SUPPORTED MARKETS ===== -->
+      <h2 id="supported-markets">Supported Markets</h2>
+      <h3>Jupiter Perps</h3>
+      <p>Up to 250x leverage. Available markets:</p>
+      <ul>
+        <li><strong>SOL</strong> — Solana</li>
+        <li><strong>BTC</strong> — Bitcoin</li>
+        <li><strong>ETH</strong> — Ethereum</li>
+      </ul>
+      <h3>Flash Trade</h3>
+      <p>Up to 100x leverage. Available markets:</p>
+      <ul>
+        <li>BONK, WIF, JUP, DOGE, SUI, PEPE, JTO, PYTH, RNDR, HNT, W, TNSR, KMNO, MEW, POPCAT, WEN, BOME, MYRO</li>
+      </ul>
+
+      <hr class="docs-divider" />
+
+      <!-- ===== GETTING STARTED ===== -->
+      <h2 id="getting-started">Getting Started</h2>
+      <p>To register a token with Fission Protocol:</p>
+      <ol>
+        <li>Create your token on <a href="https://pump.fun" target="_blank" style="color:var(--accent);">Pump.fun</a>.</li>
+        <li>Set <strong>100% creator fee share</strong> to the Fission protocol wallet address (displayed on the main app).</li>
+        <li>Visit the Fission app and go to the <strong>Create a Derivative</strong> section.</li>
+        <li>Select your underlying asset, direction (LONG), and leverage level.</li>
+        <li>Name your derivative token.</li>
+        <li>Paste your Pump.fun mint address and click <strong>Verify</strong>.</li>
+      </ol>
+      <p>Once verified, the protocol begins collecting fees and deploying positions automatically. No further action is required.</p>
+
+      <!-- ===== REGISTRATION ===== -->
+      <h2 id="registration">Token Registration</h2>
+      <p>
+        Registration is a one-time process. The protocol verifies that the Pump.fun fee sharing configuration is correctly set to the Fission wallet and that admin privileges have been revoked (locked). This ensures fees cannot be redirected after registration.
+      </p>
+      <div class="docs-callout">
+        <strong>Important:</strong> The fee sharing configuration must be locked (admin revoked) before registration can succeed. This protects both the protocol and the token holders.
+      </div>
+
+      <!-- ===== FEE CONFIGURATION ===== -->
+      <h2 id="fee-configuration">Fee Configuration</h2>
+      <p>
+        On Pump.fun, set the creator fee recipient to the Fission protocol wallet. The full wallet address is displayed in the app's registration wizard and in the site footer. The allocation must be 100% to the protocol wallet for verification to pass.
+      </p>
+
+      <hr class="docs-divider" />
+
+      <!-- ===== ARCHITECTURE ===== -->
+      <h2 id="architecture">Architecture</h2>
+      <p>Fission Protocol consists of the following components:</p>
+      <ul>
+        <li><strong>Frontend</strong> — Static site deployed on Vercel. Handles token registration UI, dashboard, and documentation.</li>
+        <li><strong>Backend API</strong> — Node.js Express server that handles token registration, verification, and status queries.</li>
+        <li><strong>Worker Service</strong> — Background scheduler that continuously monitors fees, manages perpetual positions, and executes buyback cycles.</li>
+        <li><strong>Database</strong> — Firebase Firestore for storing registered token metadata, position state, and transaction history.</li>
+        <li><strong>On-Chain</strong> — All fee collection, position management, and token burns happen directly on the Solana blockchain.</li>
+      </ul>
+
+      <!-- ===== SMART CONTRACTS ===== -->
+      <h2 id="smart-contracts">Smart Contracts</h2>
+      <p>
+        Fission does not deploy its own smart contracts. Instead, it interacts with existing, audited protocols on Solana:
+      </p>
+      <ul>
+        <li><strong>Pump.fun</strong> — Token creation and fee sharing configuration.</li>
+        <li><strong>Jupiter Perps</strong> — Perpetual position management for SOL, BTC, ETH.</li>
+        <li><strong>Flash Trade</strong> — Perpetual position management for altcoin markets.</li>
+        <li><strong>Jupiter Aggregator</strong> — Token swaps for buyback execution.</li>
+      </ul>
+
+      <!-- ===== API REFERENCE ===== -->
+      <h2 id="api-reference">API Reference</h2>
+      <h3>POST /api/v1/tokens/register</h3>
+      <p>Register a new token with the protocol.</p>
+      <pre>{
+  "mint": "string — Solana mint address (base58)",
+  "underlying": "string — Target asset symbol (e.g. SOL, BTC)",
+  "side": "string — Position direction (long)",
+  "leverage": "number — Leverage multiplier (25-250)"
+}</pre>
+      <h3>GET /api/v1/tokens/:mint/status</h3>
+      <p>Returns the current status of a registered token, including position data and buyback history.</p>
+      <h3>GET /api/v1/stats</h3>
+      <p>Returns aggregate protocol statistics: active derivatives, total fees claimed, position PnL, and buybacks executed.</p>
+
+      <!-- ===== SECURITY ===== -->
+      <h2 id="security">Security</h2>
+      <ul>
+        <li>All protocol wallet keys are stored in encrypted environment variables, never in source code.</li>
+        <li>Fee sharing configurations are verified on-chain before registration is accepted.</li>
+        <li>Admin revocation is required, ensuring fee routing cannot be changed post-registration.</li>
+        <li>The protocol source code is open source and available for review on <a href="https://github.com/FissionDotFunSOL/fission" target="_blank" style="color:var(--accent);">GitHub</a>.</li>
+        <li>Rate limiting is enforced on all API endpoints to prevent abuse.</li>
+      </ul>
+
+      <hr class="docs-divider" />
+
+      <!-- ===== TERMS OF SERVICE ===== -->
+      <h2 id="terms">Terms of Service</h2>
+      <p><strong>Last updated:</strong> June 2026</p>
+      <p>
+        By accessing or using Fission Protocol ("the Protocol"), you agree to be bound by these Terms of Service. If you do not agree, do not use the Protocol.
+      </p>
+      <h3>1. Eligibility</h3>
+      <p>
+        You must be at least 18 years old and legally permitted to use decentralized financial protocols in your jurisdiction. You are solely responsible for ensuring compliance with all applicable laws and regulations in your region.
+      </p>
+      <h3>2. Nature of Service</h3>
+      <p>
+        Fission Protocol is an autonomous, non-custodial system that interacts with third-party smart contracts on the Solana blockchain. The Protocol does not hold, custody, or control user funds. All transactions are executed on-chain and are irreversible.
+      </p>
+      <h3>3. No Financial Advice</h3>
+      <p>
+        Nothing provided by the Protocol constitutes financial, investment, legal, or tax advice. All leveraged trading involves substantial risk of loss. You should consult with qualified professionals before making financial decisions.
+      </p>
+      <h3>4. Assumption of Risk</h3>
+      <p>
+        By using the Protocol, you acknowledge and accept the inherent risks of blockchain technology, smart contract interaction, leveraged trading, and digital asset volatility. You accept full responsibility for any losses incurred.
+      </p>
+      <h3>5. No Warranties</h3>
+      <p>
+        The Protocol is provided "as is" and "as available" without warranties of any kind, express or implied. The developers make no guarantees regarding uptime, accuracy, profitability, or fitness for any particular purpose.
+      </p>
+      <h3>6. Limitation of Liability</h3>
+      <p>
+        In no event shall the Protocol developers, contributors, or affiliates be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the Protocol, including but not limited to loss of profits, data, or digital assets.
+      </p>
+      <h3>7. Modifications</h3>
+      <p>
+        These Terms may be updated at any time. Continued use of the Protocol after changes constitutes acceptance of the revised Terms.
+      </p>
+
+      <!-- ===== PRIVACY POLICY ===== -->
+      <h2 id="privacy">Privacy Policy</h2>
+      <p><strong>Last updated:</strong> June 2026</p>
+      <h3>Data Collection</h3>
+      <p>
+        Fission Protocol does not collect, store, or process personal identifying information. The Protocol interacts exclusively with public blockchain data (wallet addresses, transaction hashes, on-chain state).
+      </p>
+      <h3>Cookies</h3>
+      <p>
+        The website does not use cookies or tracking scripts. No analytics services are embedded.
+      </p>
+      <h3>Third-Party Services</h3>
+      <p>
+        The Protocol interacts with third-party services including Pump.fun, Jupiter, Flash Trade, and Solana RPC providers. These services have their own privacy policies and terms of service. The Protocol is not responsible for data handling by third parties.
+      </p>
+      <h3>On-Chain Data</h3>
+      <p>
+        All blockchain transactions are public by nature. Wallet addresses, transaction amounts, and position data are visible to anyone on the Solana blockchain. This is inherent to blockchain technology and not controlled by the Protocol.
+      </p>
+
+      <!-- ===== RISK DISCLOSURE ===== -->
+      <h2 id="risks">Risk Disclosure</h2>
+      <div class="docs-warning">
+        <strong>Important:</strong> Trading perpetual contracts with leverage carries a high degree of risk. You should carefully consider whether such trading is suitable for you in light of your financial condition.
+      </div>
+      <h3>Market Risk</h3>
+      <p>
+        The value of digital assets can be highly volatile. Perpetual positions can experience rapid and substantial losses, especially at high leverage levels. Positions may be liquidated if the market moves against them beyond the maintenance margin.
+      </p>
+      <h3>Smart Contract Risk</h3>
+      <p>
+        The Protocol interacts with third-party smart contracts (Jupiter Perps, Flash Trade, Pump.fun). While these contracts have been audited, no audit eliminates all risk. Smart contract vulnerabilities, exploits, or failures could result in partial or total loss of funds.
+      </p>
+      <h3>Protocol Risk</h3>
+      <p>
+        The Fission backend is an off-chain service. Service interruptions, bugs, or infrastructure failures could prevent the protocol from managing positions, claiming fees, or executing buybacks in a timely manner.
+      </p>
+      <h3>Regulatory Risk</h3>
+      <p>
+        The regulatory environment for digital assets and decentralized finance is evolving rapidly. Changes in regulations could affect the Protocol's ability to operate or could impose legal obligations on users.
+      </p>
+      <h3>Liquidity Risk</h3>
+      <p>
+        Buyback operations depend on available liquidity for the creator's token. Low-liquidity tokens may experience high slippage during buyback execution, reducing the effectiveness of the burn mechanism.
+      </p>
+
+      <!-- ===== DISCLAIMER ===== -->
+      <h2 id="disclaimer">Disclaimer</h2>
+      <p>
+        Fission Protocol is experimental software. The Protocol is provided for informational and educational purposes only. It is not an offer or solicitation to buy or sell any securities, tokens, or financial instruments.
+      </p>
+      <p>
+        The developers and contributors of Fission Protocol are not registered as brokers, dealers, investment advisors, or financial institutions. No regulatory authority has reviewed or approved the Protocol.
+      </p>
+      <p>
+        Past performance is not indicative of future results. The use of leveraged trading strategies does not guarantee returns and may result in losses exceeding the initial investment of fees.
+      </p>
+      <p>
+        By using this Protocol, you represent that you understand these risks and accept full responsibility for your actions. You agree to hold the Protocol's developers, contributors, and affiliates harmless from any claims, damages, or losses arising from your use of the Protocol.
+      </p>
+
+    </main>
+  </div>
+
+  <!-- FOOTER -->
+  <footer class="docs-footer">
+    FISSION Protocol 2025-2026. All operations autonomous. All rights reserved.
+  </footer>
+
+</body>
+</html>
