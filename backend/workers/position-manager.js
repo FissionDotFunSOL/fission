@@ -126,7 +126,7 @@ export async function managePositionForToken(mint) {
       const gainPct = deployedUsd > 0 ? proportionalPnl / deployedUsd : 0;
       const tpThreshold = config.RISK.earlyTakeProfitPct;
 
-      if (gainPct >= tpThreshold && proportionalPnl > 0) {
+      if (gainPct >= tpThreshold && proportionalPnl > 0 && proportionalPnl > 5) {
         const reducePct = config.RISK.takeProfitReducePct;
         logger.info('TAKE PROFIT triggered', {
           mint,
@@ -424,7 +424,7 @@ async function checkAndTakeProfit(mint, token) {
   const gainPct = deployedUsd > 0 ? unrealisedPnl / deployedUsd : 0;
   const tpThreshold = config.RISK.earlyTakeProfitPct;
 
-  if (gainPct >= tpThreshold && unrealisedPnl > 0) {
+  if (gainPct >= tpThreshold && unrealisedPnl > 5) {
     const reducePct = config.RISK.takeProfitReducePct;
     logger.info('FAST TAKE PROFIT triggered', {
       mint, market,
