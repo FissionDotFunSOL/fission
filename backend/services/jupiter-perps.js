@@ -350,6 +350,76 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
       market, side, leverage: leverage + 'x', txSig: sig,
     });
 
+    // -----------------------------------------------------------------------
+    // Leverage correction: Jupiter's keeper often partially fills at lower
+    // leverage. Wait for the fill, then send a follow-up size increase
+    // (0 collateral) to reach the target leverage.
+    // -----------------------------------------------------------------------
+    try {
+      await new Promise(r => setTimeout(r, 10000)); // wait for keeper fill
+
+      const posResp = await fetch('https://perps-api.jup.ag/v1/positions?walletAddress=' + wallet.toBase58());
+      const posData = await posResp.json();
+      const pos = posData.dataList?.[0];
+
+      if (pos) {
+        const actualLev = parseFloat(pos.leverage) || 0;
+        const targetLev = leverage;
+
+        if (actualLev > 0 && actualLev < targetLev * 0.8) {
+          // Keeper filled at lower leverage, send size increase to correct
+          const currentSizeUsd = parseFloat(pos.sizeUsdDelta) || 0;
+          const collateralUsdActual = parseFloat(pos.collateralUsd) || 0;
+          const targetSizeUsd = Math.round(collateralUsdActual / 1e6 * targetLev * 1e6);
+          const missingSizeUsd = targetSizeUsd - currentSizeUsd;
+
+          if (missingSizeUsd > 100000) { // at least $0.10
+            logger.info('Leverage correction: increasing size to reach target', {
+              market, actualLev: actualLev.toFixed(1) + 'x', targetLev: targetLev + 'x',
+              missingSizeUsd: (missingSizeUsd / 1e6).toFixed(0),
+            });
+
+            const corrResp = await fetch('https://perps-api.jup.ag/v2/positions/increase', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                asset: market,
+                inputToken: side === 'short' ? 'USDC' : market,
+                inputTokenAmount: '0',
+                sizeUsdDelta: missingSizeUsd.toString(),
+                side,
+                walletAddress: wallet.toBase58(),
+                maxSlippageBps: '300',
+              }),
+            });
+            const corrData = await corrResp.json();
+
+            if (corrData.serializedTxBase64) {
+              const corrTxBuf = Buffer.from(corrData.serializedTxBase64, 'base64');
+              const corrTx = VersionedTransaction.deserialize(corrTxBuf);
+              corrTx.sign([config.protocolKeypair]);
+              const corrSigned = Buffer.from(corrTx.serialize()).toString('base64');
+
+              const corrExec = await fetch('https://perps-api.jup.ag/v1/transaction/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'increase-position', serializedTxBase64: corrSigned }),
+              });
+              const corrExecData = await corrExec.json();
+              logger.info('Leverage correction submitted', {
+                market, corrTxid: corrExecData.txid,
+                expectedLev: corrData.quote?.leverage + 'x',
+              });
+            }
+          }
+        } else {
+          logger.info('Leverage OK, no correction needed', { market, actualLev: actualLev.toFixed(1) + 'x' });
+        }
+      }
+    } catch (corrErr) {
+      logger.warn('Leverage correction failed (non-fatal)', { error: corrErr.message });
+    }
+
     return { txSig: sig };
   } catch (err) {
     logger.error('openPosition failed', { market, side, sizeUsd, error: err.message });
