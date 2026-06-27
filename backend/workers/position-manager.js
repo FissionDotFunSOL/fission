@@ -302,3 +302,146 @@ export async function manageAllPositions() {
   logger.info(`Position management cycle complete: ${results.length}/${active.length}`);
   return results;
 }
+
+/**
+ * Fast profit check for ALL active tokens.
+ * Runs every 60-90s. Only checks on-chain PnL and takes profits.
+ * Does NOT open new positions or deploy capital.
+ * Critical for high-leverage positions (250x) where profit windows are seconds.
+ */
+export async function checkProfitsAllTokens() {
+  const tokens = await getAllTokens();
+  const active = tokens.filter((t) => t.status === 'active');
+
+  if (active.length === 0) return [];
+
+  const results = [];
+  for (const token of active) {
+    const mint = token.id || token.mint;
+    try {
+      const result = await checkAndTakeProfit(mint, token);
+      if (result) results.push({ mint, ...result });
+    } catch (err) {
+      logger.error('Profit check failed', { mint, error: err.message });
+    }
+  }
+
+  if (results.length > 0) {
+    logger.info(`Profit check: ${results.length} actions taken`);
+  }
+  return results;
+}
+
+/**
+ * Check a single token's position for profit-taking opportunity.
+ */
+async function checkAndTakeProfit(mint, token) {
+  const position = await db.getPosition(mint);
+  if (!position || !position.deployedSol || position.deployedSol <= 0) return null;
+
+  const underlying = token.underlying?.toUpperCase();
+  const market = underlying && config.ALL_PERPS_MARKETS.includes(underlying)
+    ? underlying : null;
+  if (!market) return null;
+
+  // Fetch live on-chain PnL
+  const pnlInfo = await perps.getPositionPnl(market, token.side || 'long');
+  if (!pnlInfo.exists) {
+    // Position gone — likely liquidated
+    if (position.deployedSol > 0) {
+      await db.setPosition(mint, {
+        ...position,
+        deployedSol: 0,
+        lastAction: 'liquidated-detected',
+        lastActionAt: Date.now(),
+        pnl: 0,
+        riskAlert: 'position-missing',
+      });
+      logger.warn('Position liquidated (fast check)', { mint, market, deployedSol: position.deployedSol });
+    }
+    return null;
+  }
+
+  // Update DB with live PnL
+  const deployedAmount = position.deployedSol;
+  const solPrice = await getSolPrice().catch(() => 0);
+  
+  // Fallback price if Jupiter rate-limited
+  let currentSolPrice = solPrice;
+  if (!currentSolPrice || currentSolPrice <= 0) {
+    try {
+      const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+      if (cgRes.ok) {
+        const cgData = await cgRes.json();
+        currentSolPrice = cgData?.solana?.usd || 0;
+      }
+    } catch {}
+  }
+
+  const deployedUsd = deployedAmount * (currentSolPrice || 150);
+  const unrealisedPnl = pnlInfo.pnl || 0;
+
+  // Update position with latest PnL
+  await db.setPosition(mint, {
+    ...position,
+    pnl: unrealisedPnl,
+    entry: pnlInfo.entry || position.entry,
+    size: pnlInfo.size,
+    lastRiskCheck: Date.now(),
+  });
+
+  // Check take-profit threshold
+  const gainPct = deployedUsd > 0 ? unrealisedPnl / deployedUsd : 0;
+  const tpThreshold = config.RISK.earlyTakeProfitPct;
+
+  if (gainPct >= tpThreshold && unrealisedPnl > 0) {
+    const reducePct = config.RISK.takeProfitReducePct;
+    logger.info('FAST TAKE PROFIT triggered', {
+      mint, market,
+      gainPct: (gainPct * 100).toFixed(1) + '%',
+      unrealisedPnl: unrealisedPnl.toFixed(2),
+      reducePct: (reducePct * 100).toFixed(0) + '%',
+    });
+
+    try {
+      const tpResult = await retry(
+        () => perps.reducePosition(market, reducePct, token.side || 'long'),
+        { retries: 2, delayMs: 2000, label: `fastTP(${market})` }
+      );
+
+      const freedSol = deployedAmount * reducePct;
+      const sourceTokenSol = freedSol * config.PROFIT_SPLIT.sourceToken;
+      const fissionSol = freedSol * config.PROFIT_SPLIT.fission;
+
+      await db.setPosition(mint, {
+        ...position,
+        deployedSol: deployedAmount * (1 - reducePct),
+        lastAction: 'fast-take-profit',
+        lastActionAt: Date.now(),
+        pnl: unrealisedPnl * (1 - reducePct),
+      });
+
+      // Record splits for buyback engine
+      await db.addDoc('splits', {
+        tokenMint: mint, runId: `ftp-${Date.now()}`, type: 'take-profit-source',
+        totalSol: sourceTokenSol, positionAmount: 0, buybackAmount: 0,
+        sourceTokenBuyback: sourceTokenSol, timestamp: Date.now(),
+      });
+      await db.addDoc('splits', {
+        tokenMint: mint, runId: `ftp-f-${Date.now()}`, type: 'take-profit-fission',
+        totalSol: fissionSol, positionAmount: 0, buybackAmount: fissionSol,
+        sourceTokenBuyback: 0, timestamp: Date.now(),
+      });
+
+      logger.info('Fast take profit executed', {
+        mint, market, freedSol: freedSol.toFixed(6), txSig: tpResult?.txSig,
+      });
+
+      return { action: 'fast-take-profit', txSig: tpResult?.txSig, freedSol };
+    } catch (err) {
+      logger.error('Fast take profit failed', { mint, market, error: err.message });
+    }
+  }
+
+  return null;
+}

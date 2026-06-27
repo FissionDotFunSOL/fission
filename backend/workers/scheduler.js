@@ -2,6 +2,7 @@ import logger from '../utils/logger.js';
 import { randomIntervalMs, sleep } from '../utils/helpers.js';
 import { claimAllFees } from './fee-claimer.js';
 import { manageAllPositions } from './position-manager.js';
+import { checkProfitsAllTokens } from './position-manager.js';
 import { buybackAllTokens } from './buyback-engine.js';
 import { runRiskCheck } from './risk-manager.js';
 
@@ -42,6 +43,7 @@ export function startScheduler() {
   _abortController = new AbortController();
   logger.info('Scheduler started — all workers will run autonomously');
 
+  // Standard workers (30-120 min intervals)
   const workers = [
     { name: 'fee-claimer', fn: claimAllFees },
     { name: 'position-manager', fn: manageAllPositions },
@@ -53,6 +55,10 @@ export function startScheduler() {
     initHealth(w.name);
     workerLoop(w.name, w.fn, _abortController.signal);
   }
+
+  // Fast profit-checker (60-90s intervals) — critical for high leverage
+  initHealth('profit-checker');
+  fastWorkerLoop('profit-checker', checkProfitsAllTokens, _abortController.signal);
 }
 
 /**
@@ -131,6 +137,51 @@ async function workerLoop(name, fn, signal) {
       logger.info(`[${name}] Next cycle in ${(intervalMs / 60_000).toFixed(1)} minutes`);
     }
 
+    health.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
+    await sleep(intervalMs);
+  }
+
+  health.status = 'stopped';
+}
+
+/**
+ * Fast worker loop — runs every 60-90s for time-critical operations.
+ * At 250x leverage, positions can profit or liquidate in seconds.
+ */
+async function fastWorkerLoop(name, fn, signal) {
+  // Small initial delay
+  await sleep(15_000);
+
+  const health = _workerHealth[name];
+
+  while (_running && !signal.aborted) {
+    health.status = 'running';
+    const start = Date.now();
+
+    try {
+      await fn();
+
+      const elapsed = Date.now() - start;
+      health.totalRuns++;
+      health.consecutiveErrors = 0;
+      health.lastRunAt = new Date().toISOString();
+      health.lastDurationMs = elapsed;
+      health.status = 'idle';
+    } catch (err) {
+      health.totalRuns++;
+      health.totalErrors++;
+      health.consecutiveErrors++;
+      health.lastErrorAt = new Date().toISOString();
+      health.lastError = err.message;
+      health.status = 'error';
+
+      logger.error(`[${name}] Fast check failed`, { error: err.message });
+    }
+
+    if (!_running || signal.aborted) break;
+
+    // 60-90 second interval with jitter
+    const intervalMs = 60_000 + Math.random() * 30_000;
     health.nextRunAt = new Date(Date.now() + intervalMs).toISOString();
     await sleep(intervalMs);
   }
