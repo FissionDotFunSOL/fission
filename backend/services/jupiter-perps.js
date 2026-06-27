@@ -196,12 +196,28 @@ export async function getPositionPnl(market) {
     let currentPrice = 0;
     try {
       let solPrice = 0;
+
+      // Primary: read Pyth oracle price directly from on-chain (no external API needed)
       try {
-        solPrice = await getSolPrice();
-      } catch {
-        // Jupiter rate-limited
+        const oracleKey = CUSTODY_ORACLES['SOL'];
+        const oracleInfo = await conn.getAccountInfo(oracleKey);
+        if (oracleInfo && oracleInfo.data && oracleInfo.data.length >= 96) {
+          // Pyth v2 price account: aggregate price at offset 64, exponent is -8
+          const priceRaw = oracleInfo.data.readBigInt64LE(64);
+          solPrice = Number(priceRaw) * 1e-8;
+        }
+      } catch (oracleErr) {
+        logger.debug('Pyth oracle read failed, trying APIs', { error: oracleErr.message });
       }
 
+      // Fallback 1: Jupiter quote
+      if (!solPrice || solPrice <= 0) {
+        try {
+          solPrice = await getSolPrice();
+        } catch {}
+      }
+
+      // Fallback 2: CoinGecko
       if (!solPrice || solPrice <= 0) {
         try {
           const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
@@ -212,7 +228,7 @@ export async function getPositionPnl(market) {
         } catch {}
       }
 
-      // Third fallback: Binance public API
+      // Fallback 3: Binance
       if (!solPrice || solPrice <= 0) {
         try {
           const bnRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT');
@@ -222,6 +238,8 @@ export async function getPositionPnl(market) {
           }
         } catch {}
       }
+
+      logger.debug('Price resolved for PnL', { market, solPrice: solPrice.toFixed(2) });
 
       currentPrice = market === 'SOL' ? solPrice
         : market === 'BTC' ? solPrice * 400
