@@ -376,3 +376,106 @@ function startLiveUpdates() {
     }
   }, 30_000);
 }
+
+// ═══════════════════════════════════════════════════════════
+// LIVE ACTIVITY FEED
+// ═══════════════════════════════════════════════════════════
+export function initActivityFeed() {
+  const feed = document.getElementById('activity-feed');
+  if (!feed) return;
+
+  loadActivityFeed(feed);
+  // Refresh every 60s
+  setInterval(() => loadActivityFeed(feed), 60_000);
+}
+
+async function loadActivityFeed(container) {
+  try {
+    const [runsRes, buybacksRes] = await Promise.all([
+      fetch('/api/v1/runs').catch(() => null),
+      fetch('/api/v1/buybacks').catch(() => null),
+    ]);
+
+    const events = [];
+
+    if (runsRes && runsRes.ok) {
+      const runsJson = await runsRes.json();
+      const runs = runsJson.runs || [];
+      for (const run of runs.slice(-30)) {
+        if (run.feesClaimed > 0) {
+          events.push({
+            type: 'fee-claim',
+            time: run.timestamp || run.createdAt,
+            label: 'Fee Claimed',
+            detail: `${(run.feesClaimed || 0).toFixed(6)} SOL`,
+            txSig: run.txSig,
+            color: 'var(--accent)',
+          });
+        }
+        if (run.txSig && run.positionAmount > 0) {
+          events.push({
+            type: 'position',
+            time: run.timestamp || run.createdAt,
+            label: 'Position Funded',
+            detail: `${(run.positionAmount || 0).toFixed(6)} SOL deployed`,
+            txSig: run.txSig,
+            color: 'var(--accent-secondary, #a855f7)',
+          });
+        }
+      }
+    }
+
+    if (buybacksRes && buybacksRes.ok) {
+      const buybacksJson = await buybacksRes.json();
+      const buybacks = buybacksJson.buybacks || [];
+      for (const b of buybacks) {
+        const isSource = b.type === 'source-buyback-burn';
+        events.push({
+          type: 'buyback',
+          time: b.timestamp || b.createdAt,
+          label: isSource ? 'Source Buyback & Burn' : 'FISSION Buyback & Burn',
+          detail: `${(b.amountSol || 0).toFixed(4)} SOL / ${formatNumber(b.tokensBurned || 0)} tokens burned`,
+          txSig: b.swapTxSig,
+          burnSig: b.burnTxSig,
+          color: 'var(--red, #ff3366)',
+        });
+      }
+    }
+
+    // Sort by time descending
+    events.sort((a, b) => (b.time || 0) - (a.time || 0));
+
+    if (events.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:40px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-tertiary);">
+          No activity yet. Protocol will start generating events once fees are claimed.
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = events.slice(0, 25).map(e => {
+      const timeStr = e.time ? new Date(e.time).toLocaleString() : '--';
+      const solscanLink = e.txSig
+        ? `<a href="https://solscan.io/tx/${e.txSig}" target="_blank" style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-decoration:none;margin-left:8px;">[view tx]</a>`
+        : '';
+      const burnLink = e.burnSig
+        ? `<a href="https://solscan.io/tx/${e.burnSig}" target="_blank" style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-decoration:none;margin-left:4px;">[burn tx]</a>`
+        : '';
+
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:3px;font-size:0.75rem;">
+          <div style="width:8px;height:8px;border-radius:50%;background:${e.color};flex-shrink:0;"></div>
+          <div style="flex:1;">
+            <div style="font-family:var(--font-mono);color:var(--text-primary);">${e.label}${solscanLink}${burnLink}</div>
+            <div style="color:var(--text-muted);font-size:0.65rem;margin-top:2px;">${e.detail}</div>
+          </div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-tertiary);white-space:nowrap;">${timeStr}</div>
+        </div>`;
+    }).join('');
+  } catch {
+    container.innerHTML = `
+      <div style="text-align:center;padding:40px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-tertiary);">
+        Unable to load activity feed.
+      </div>`;
+  }
+}

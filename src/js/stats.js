@@ -48,24 +48,38 @@ export function initStats() {
 
 async function fetchStats() {
   try {
-    const response = await fetch('/api/v1/stats');
-    if (!response.ok) throw new Error('API unavailable');
-    const json = await response.json();
+    const [statsRes, buybacksRes] = await Promise.all([
+      fetch('/api/v1/stats'),
+      fetch('/api/v1/buybacks'),
+    ]);
 
-    if (json.stats) {
-      // Map API stats to our counter format (no prefix — HTML handles it)
+    const statsJson = statsRes.ok ? await statsRes.json() : {};
+    const buybacksJson = buybacksRes.ok ? await buybacksRes.json() : {};
+
+    const buybacks = buybacksJson.buybacks || [];
+    let totalBurned = 0;
+    let totalBurnedSol = 0;
+    let buybackCount = 0;
+
+    for (const b of buybacks) {
+      totalBurned += b.tokensBurned || 0;
+      totalBurnedSol += b.amountSol || 0;
+      buybackCount++;
+    }
+
+    if (statsJson.stats) {
       return [
-        { key: 'derivatives', value: json.stats.activeTokens || json.stats.totalTokens || 0 },
-        { key: 'fees',        value: json.stats.totalFeesClaimed || 0 },
-        { key: 'pnl',         value: Math.abs(json.stats.totalPnl || 0) },
-        { key: 'buybacks',    value: json.stats.totalBuybackSol || 0 },
+        { key: 'derivatives', value: statsJson.stats.activeTokens || statsJson.stats.totalTokens || 0 },
+        { key: 'fees',        value: statsJson.stats.totalFeesClaimed || 0 },
+        { key: 'pnl',         value: Math.abs(statsJson.stats.totalPnl || 0) },
+        { key: 'buybacks',    value: buybackCount || (statsJson.stats.totalBuybacks || 0) },
+        { key: 'totalBurned', value: totalBurned },
+        { key: 'totalBurnedSol', value: Math.round(totalBurnedSol * 10000) / 10000 },
       ];
     }
 
-    // API returned but no stats — use fallback zeros
     return [...STATS_DATA];
   } catch {
-    // API unavailable — use fallback zeros
     return [...STATS_DATA];
   }
 }

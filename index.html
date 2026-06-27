@@ -50,6 +50,7 @@
         <a href="#engine" class="nav-link">Engine</a>
         <a href="#dashboard" class="nav-link">Dashboard</a>
         <a href="#launch" class="nav-link">Launch</a>
+        <a href="#faq" class="nav-link">FAQ</a>
       </nav>
 
       <a href="#launch" class="btn btn-primary btn-sm header-cta">LAUNCH TOKEN</a>
@@ -190,7 +191,7 @@
         <h2 class="section-title">Protocol Metrics</h2>
       </div>
 
-      <div class="stats-grid reveal stagger">
+      <div class="stats-grid reveal stagger" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
         <div class="stat-block">
           <div class="stat-value"><span data-counter="derivatives">0</span></div>
           <div class="stat-label">Active Tokens</div>
@@ -204,8 +205,16 @@
           <div class="stat-label">Perp PnL</div>
         </div>
         <div class="stat-block">
-          <div class="stat-value"><span class="prefix">$</span><span data-counter="buybacks">0</span></div>
-          <div class="stat-label">Tokens Burned</div>
+          <div class="stat-value"><span data-counter="buybacks">0</span></div>
+          <div class="stat-label">Buybacks</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-value"><span data-counter="totalBurned">0</span></div>
+          <div class="stat-label">Total Tokens Burned</div>
+        </div>
+        <div class="stat-block">
+          <div class="stat-value"><span data-counter="totalBurnedSol">0</span> <span style="font-size:0.6em;color:var(--text-muted);">SOL</span></div>
+          <div class="stat-label">SOL Spent on Burns</div>
         </div>
       </div>
     </div>
@@ -425,6 +434,161 @@
     </div>
   </section>
 
+  <div class="container"><hr class="divider" /></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       WHY FISSION (Value Prop)
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="why-fission">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Why Fission</span>
+        <h2 class="section-title">What Makes This Different</h2>
+        <p class="section-subtitle">
+          Regular Pump.fun tokens have no built-in value mechanism. Fission changes that.
+        </p>
+      </div>
+
+      <div class="stats-grid reveal stagger" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
+        <div class="stat-block" style="text-align:left;padding:24px;">
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--accent);margin-bottom:8px;">AUTOMATED BUYBACK</div>
+          <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;">
+            Every fee collected automatically buys back tokens from the open market and burns them permanently. Supply decreases every cycle.
+          </div>
+        </div>
+        <div class="stat-block" style="text-align:left;padding:24px;">
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--accent);margin-bottom:8px;">LEVERAGED AMPLIFICATION</div>
+          <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;">
+            Fees are deployed into perpetual positions at up to 250x leverage. Profitable trades amplify buyback power far beyond the original fee amount.
+          </div>
+        </div>
+        <div class="stat-block" style="text-align:left;padding:24px;">
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--accent);margin-bottom:8px;">ZERO TRUST REQUIRED</div>
+          <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;">
+            Fully autonomous. No team controls the funds. The protocol wallet runs on-chain with open source code. Every transaction is verifiable on Solscan.
+          </div>
+        </div>
+        <div class="stat-block" style="text-align:left;padding:24px;">
+          <div style="font-family:var(--font-mono);font-size:0.75rem;color:var(--accent);margin-bottom:8px;">DUAL TOKEN PRESSURE</div>
+          <div style="font-size:0.85rem;color:var(--text-secondary);line-height:1.6;">
+            70% of profits buy back the derivative token. 30% buy back FISSION. Both tokens benefit from every position that profits.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container"><hr class="divider" /></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       LIVE ACTIVITY FEED
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="activity">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">Activity</span>
+        <h2 class="section-title">Live Protocol Activity</h2>
+        <p class="section-subtitle">
+          Real-time feed of fee claims, position actions, buybacks, and burns.
+        </p>
+      </div>
+
+      <div class="reveal" style="max-width:700px;margin:0 auto;">
+        <div id="activity-feed" style="display:flex;flex-direction:column;gap:8px;max-height:400px;overflow-y:auto;padding:4px;">
+          <div style="text-align:center;padding:40px;font-family:var(--font-mono);font-size:0.75rem;color:var(--text-tertiary);">
+            Loading activity...
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container"><hr class="divider" /></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       FAQ
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">FAQ</span>
+        <h2 class="section-title">Frequently Asked Questions</h2>
+      </div>
+
+      <div class="reveal" style="max-width:700px;margin:0 auto;">
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            What is FISSION?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            FISSION is a protocol that turns Pump.fun creator fees into an autonomous trading and buyback engine. When you launch a token on Pump.fun and register it with FISSION, 100% of your creator fees are used to open leveraged perpetual positions on Jupiter Perps. Profits from those positions buy back and burn your token, creating deflationary pressure.
+          </div>
+        </div>
+
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            What happens if the position gets liquidated?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            At high leverage (250x), positions can be liquidated by small price movements. When this happens, the collateral for that position is lost. However, the protocol continuously claims new fees and opens new positions. A fast profit-checker runs every 60-90 seconds to take profits before positions can reverse. Over time, the cumulative buyback pressure exceeds the liquidation losses.
+          </div>
+        </div>
+
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            How are fees split?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            Creator fees are split 70/30. 70% goes to leveraged perpetual positions on Jupiter Perps. 30% goes directly to buying back and burning the FISSION protocol token. When positions profit, those profits are split again: 70% buys back the derivative token (the one whose fees funded the position), 30% buys back FISSION.
+          </div>
+        </div>
+
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            Is the code audited?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            The code is fully open source on GitHub. Anyone can review the complete protocol logic, fee claiming, position management, and buyback execution. No formal audit has been conducted. Use at your own risk.
+          </div>
+        </div>
+
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            What is the FISSION token?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            FISSION is the protocol token. 30% of all creator fees and 30% of all position profits across every token launched on the platform are used to buy back and burn FISSION. The more tokens launched and the more fees generated, the more buy pressure on FISSION.
+          </div>
+        </div>
+
+        <div class="faq-item" style="border-bottom:1px solid var(--border);padding:20px 0;">
+          <div class="faq-q" style="font-family:var(--font-mono);font-size:0.85rem;color:var(--text-primary);cursor:pointer;" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">
+            Can I verify transactions on-chain?
+          </div>
+          <div class="faq-a" style="display:none;margin-top:12px;font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+            Yes. Every fee claim, position open/close, buyback swap, and token burn is a Solana transaction signed by the protocol wallet. You can verify all activity on Solscan. The protocol wallet address is displayed in the footer and links directly to the Solscan explorer.
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="container"><hr class="divider" /></div>
+
+  <!-- ═══════════════════════════════════════════════════════
+       RISK WARNING
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="risk">
+    <div class="container">
+      <div class="reveal" style="max-width:700px;margin:0 auto;border:1px solid var(--red, #ff3366);border-radius:4px;padding:24px;">
+        <div style="font-family:var(--font-mono);font-size:0.8rem;color:var(--red, #ff3366);margin-bottom:12px;">RISK WARNING</div>
+        <div style="font-size:0.8rem;color:var(--text-secondary);line-height:1.7;">
+          FISSION Protocol uses high-leverage perpetual positions (up to 250x) which carry extreme risk. Positions can be liquidated within minutes of opening. Past performance does not guarantee future results. The protocol is experimental and unaudited. There is no guarantee of profit or return of capital. Tokens launched on Pump.fun are highly speculative. Do not invest more than you can afford to lose. This is not financial advice.
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ═══════════════════════════════════════════════════════
        FOOTER
        ═══════════════════════════════════════════════════════ -->
@@ -445,9 +609,9 @@
       <div class="footer-bottom">
         <div class="footer-wallet">
           <span class="footer-wallet-label">Protocol</span>
-          <span class="footer-wallet-address" id="footer-wallet-copy">Loading...</span>
+          <a href="https://solscan.io/account/HgeoK9ASUYey5g2MBSGHfCdauDzLv93x6vAs7j492i9c" target="_blank" style="font-family:var(--font-mono);font-size:0.65rem;color:var(--accent);text-decoration:none;word-break:break-all;" id="footer-wallet-copy">HgeoK9ASUYey5g2MBSGHfCdauDzLv93x6vAs7j492i9c</a>
         </div>
-        <span class="footer-copy">FISSION Protocol 2025–2026. All operations autonomous.</span>
+        <span class="footer-copy">FISSION Protocol 2025-2026. All operations autonomous.</span>
       </div>
     </div>
   </footer>

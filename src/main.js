@@ -9,7 +9,7 @@
 import { initParticles } from './js/particles.js';
 import { initTypewriter } from './js/typewriter.js';
 import { initScroll } from './js/scroll.js';
-import { initDashboard, initModal } from './js/dashboard.js';
+import { initDashboard, initModal, initActivityFeed } from './js/dashboard.js';
 import { initLauncher } from './js/launcher.js';
 import { initStats } from './js/stats.js';
 import { initToast } from './js/toast.js';
@@ -25,5 +25,6 @@ document.addEventListener('DOMContentLoaded', () => {
   initModal();
   initLauncher();
   initStats();
+  initActivityFeed();
   initToast();
 });
