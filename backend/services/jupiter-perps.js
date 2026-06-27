@@ -1,4 +1,4 @@
-import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+import { PublicKey, SystemProgram, SYSVAR_RENT_PUBKEY, VersionedTransaction } from '@solana/web3.js';
 import {
   getAssociatedTokenAddress,
   TOKEN_PROGRAM_ID,
@@ -266,14 +266,16 @@ export async function getPositionPnl(market) {
 }
 
 // ---------------------------------------------------------------------------
-// Open / Increase a position (LONG or SHORT) using Anchor IDL
+// Open / Increase a position using Jupiter Perps v2 API
+// The v2 API builds the transaction server-side with correct leverage,
+// eliminating the keeper partial-fill issue from raw instructions.
 // ---------------------------------------------------------------------------
 
 /**
- * Open or add to a position on Jupiter Perps.
+ * Open or add to a position on Jupiter Perps via v2 API.
  *
  * @param {string} market — asset symbol (SOL, BTC, ETH)
- * @param {number} sizeUsd — total position size in USD (after leverage)
+ * @param {number} sizeUsd — total position size in USD (after leverage) — used to calc leverage
  * @param {number} collateralSol — collateral amount in SOL
  * @param {'long'|'short'} side — position direction
  */
@@ -281,123 +283,61 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
   try {
     if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
-    const custodyKey = CUSTODY_ACCOUNTS[market];
-    if (!custodyKey) throw new Error(`Unsupported market: ${market}`);
-
     const wallet = config.protocolKeypair.publicKey;
+    const collateralLamports = Math.round(collateralSol * 1e9);
 
-    const isShort = side === 'short';
-    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
-    const collateralMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
+    // Calculate leverage from sizeUsd / collateral value
+    const solPrice = await getSolPrice();
+    const collateralUsd = collateralSol * solPrice;
+    const leverage = collateralUsd > 0 ? Math.min(Math.round(sizeUsd / collateralUsd * 10) / 10, 250) : 100;
 
-    let collateralAmount;
-    if (isShort) {
-      const solPrice = await getSolPrice();
-      if (solPrice <= 0) throw new Error('Cannot get SOL price for USDC swap');
-      collateralAmount = BigInt(Math.round(collateralSol * solPrice * 1e6));
-    } else {
-      collateralAmount = BigInt(Math.round(collateralSol * 1e9));
-    }
-
-    const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, side);
-    const perpetualsPDA = derivePerpetualsPDA();
-    const counter = Math.floor(Math.random() * 1_000_000_000);
-    const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'increase');
-
-
-    const fundingATA = await getAssociatedTokenAddress(collateralMint, wallet);
-    const positionRequestATA = await getAssociatedTokenAddress(collateralMint, positionRequestPDA, true);
-
-    const sizeUsdScaled = BigInt(Math.round(sizeUsd * 1e6));
-
-    // Slippage protection: 3% buffer
-    let priceSlippage = BigInt(0);
-    try {
-      const solPrice = await getSolPrice();
-      if (solPrice > 0) {
-        const slippageMult = isShort ? 0.97 : 1.03;
-        const priceEstimate = market === 'SOL' ? solPrice
-          : market === 'BTC' ? solPrice * 400
-          : market === 'ETH' ? solPrice * 16
-          : solPrice;
-        priceSlippage = BigInt(Math.round(priceEstimate * slippageMult * 1e6));
-        logger.info('Slippage protection set', {
-          market, side, priceEstimate: priceEstimate.toFixed(2),
-          priceSlippage: (Number(priceSlippage) / 1e6).toFixed(2),
-        });
-      }
-    } catch (err) {
-      logger.warn('Could not set slippage protection', { error: err.message });
-    }
-
-    // Side enum: None=0, Long=1, Short=2
-    const sideEnum = isShort ? 2 : 1;
-
-    logger.info('Opening/increasing position', {
-      market, side, sizeUsd, collateralSol,
+    logger.info('Opening position via Jupiter v2 API', {
+      market, side, leverage: leverage + 'x',
+      collateralSol, sizeUsd: sizeUsd.toFixed(0),
     });
 
-    // Setup instructions: create wSOL ATA + fund it
-    const setupIxs = [];
+    const resp = await fetch('https://perps-api.jup.ag/v2/positions/increase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        asset: market,
+        inputToken: side === 'short' ? 'USDC' : market,
+        inputTokenAmount: collateralLamports.toString(),
+        leverage: leverage.toFixed(1),
+        side,
+        walletAddress: wallet.toBase58(),
+        maxSlippageBps: '300',
+      }),
+    });
 
-    if (!isShort) {
-      // For long SOL: create wSOL ATA if needed, transfer SOL, sync native
-      setupIxs.push(
-        createAssociatedTokenAccountIdempotentInstruction(
-          wallet, fundingATA, wallet, collateralMint,
-        ),
-      );
-      setupIxs.push(
-        SystemProgram.transfer({
-          fromPubkey: wallet,
-          toPubkey: fundingATA,
-          lamports: collateralAmount,
-        }),
-      );
-      setupIxs.push(
-        createSyncNativeInstruction(fundingATA),
-      );
+    const data = await resp.json();
+
+    if (!data.serializedTxBase64) {
+      logger.error('Jupiter v2 API error', { market, side, error: data.message || JSON.stringify(data) });
+      throw new Error('Jupiter v2 API failed: ' + (data.message || 'no transaction returned'));
     }
 
-    // Borsh-serialize params:
-    // sizeUsdDelta: u64, collateralTokenDelta: u64, side: u8,
-    // priceSlippage: u64, jupiterMinimumOut: Option<u64> (0=None), counter: u64
-    const paramsBuf = Buffer.alloc(8 + 8 + 1 + 8 + 1 + 8); // 34 bytes
-    paramsBuf.writeBigUInt64LE(sizeUsdScaled, 0);       // sizeUsdDelta
-    paramsBuf.writeBigUInt64LE(collateralAmount, 8);     // collateralTokenDelta
-    paramsBuf.writeUint8(sideEnum, 16);                  // side
-    paramsBuf.writeBigUInt64LE(priceSlippage, 17);       // priceSlippage
-    paramsBuf.writeUint8(0, 25);                         // jupiterMinimumOut = None
-    paramsBuf.writeBigUInt64LE(BigInt(counter), 26);     // counter
+    logger.info('Jupiter v2 quote received', {
+      market, side,
+      quoteLeverage: data.quote?.leverage,
+      quoteSize: data.quote?.positionSizeUsd,
+    });
 
-    const ixData = Buffer.concat([DISC_INCREASE, paramsBuf]);
+    // Sign and send the pre-built transaction
+    const conn = getConnection();
+    const txBuf = Buffer.from(data.serializedTxBase64, 'base64');
+    const tx = VersionedTransaction.deserialize(txBuf);
+    tx.sign([config.protocolKeypair]);
 
-    // 16 accounts matching createIncreasePositionMarketRequest
-    const ix = {
-      programId: JUP_PERPS_PROGRAM_ID,
-      keys: [
-        { pubkey: wallet, isSigner: true, isWritable: true },           // owner
-        { pubkey: fundingATA, isSigner: false, isWritable: true },      // fundingAccount
-        { pubkey: perpetualsPDA, isSigner: false, isWritable: false },   // perpetuals
-        { pubkey: JLP_POOL, isSigner: false, isWritable: false },       // pool
-        { pubkey: positionPDA, isSigner: false, isWritable: true },     // position
-        { pubkey: positionRequestPDA, isSigner: false, isWritable: true }, // positionRequest
-        { pubkey: positionRequestATA, isSigner: false, isWritable: true }, // positionRequestAta
-        { pubkey: custodyKey, isSigner: false, isWritable: false },     // custody
-        { pubkey: collateralCustody, isSigner: false, isWritable: false }, // collateralCustody
-        { pubkey: collateralMint, isSigner: false, isWritable: false }, // inputMint
-        { pubkey: REFERRAL_ACCOUNT, isSigner: false, isWritable: false }, // referral
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // tokenProgram
-        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // associatedTokenProgram
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false }, // systemProgram
-        { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false }, // eventAuthority
-        { pubkey: JUP_PERPS_PROGRAM_ID, isSigner: false, isWritable: false }, // program
-      ],
-      data: ixData,
-    };
+    const sig = await conn.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true,
+      maxRetries: 5,
+    });
 
-    const sig = await sendTx([...setupIxs, ix], [config.protocolKeypair]);
-    logger.info('Position request submitted', { market, side, sizeUsd, txSig: sig });
+    logger.info('Position request submitted via v2 API', {
+      market, side, leverage: leverage + 'x', txSig: sig,
+    });
+
     return { txSig: sig };
   } catch (err) {
     logger.error('openPosition failed', { market, side, sizeUsd, error: err.message });
@@ -422,70 +362,55 @@ export async function closePosition(market) {
   try {
     if (!config.protocolKeypair) throw new Error('Protocol keypair not loaded');
 
-    const custodyKey = CUSTODY_ACCOUNTS[market];
-    if (!custodyKey) throw new Error(`Unsupported market: ${market}`);
+    const wallet = config.protocolKeypair.publicKey;
 
-    const pnlInfo = await getPositionPnl(market);
-    if (!pnlInfo.exists) {
+    // Get current position from API
+    const posResp = await fetch('https://perps-api.jup.ag/v1/positions?walletAddress=' + wallet.toBase58());
+    const posData = await posResp.json();
+    const pos = posData.dataList?.find(p => p.side === 'long' || p.side === 'short');
+
+    if (!pos) {
       logger.warn('No position to close', { market });
       return null;
     }
 
-    const wallet = config.protocolKeypair.publicKey;
-    const isShort = pnlInfo.side === 'short';
-    const collateralCustody = isShort ? CUSTODY_ACCOUNTS['USDC'] : CUSTODY_ACCOUNTS['SOL'];
-    const receivingMint = isShort ? COLLATERAL_MINTS['USDC'] : COLLATERAL_MINTS['SOL'];
+    logger.info('Closing position via Jupiter API', {
+      market, side: pos.side, size: pos.size, collateral: pos.collateral,
+    });
 
-    const positionPDA = derivePositionPDA(wallet, custodyKey, collateralCustody, pnlInfo.side);
-    const perpetualsPDA = derivePerpetualsPDA();
-    const counter = Math.floor(Math.random() * 1_000_000_000);
-    const positionRequestPDA = derivePositionRequestPDA(positionPDA, counter, 'decrease');
+    // Use v1 API for decrease (v2 may also work)
+    const closeResp = await fetch('https://perps-api.jup.ag/v1/positions/decrease', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        asset: market,
+        desiredMint: 'So11111111111111111111111111111111111111112',
+        collateralUsdDelta: pos.collateralUsd,
+        sizeUsdDelta: pos.sizeUsdDelta,
+        positionPubkey: pos.positionPubkey,
+        side: pos.side,
+        walletAddress: wallet.toBase58(),
+        maxSlippageBps: '500',
+      }),
+    });
 
-    const receivingATA = await getAssociatedTokenAddress(receivingMint, wallet);
-    const positionRequestATA = await getAssociatedTokenAddress(receivingMint, positionRequestPDA, true);
+    const closeData = await closeResp.json();
 
-    const sizeUsd = BigInt(Math.round(Math.abs(pnlInfo.size) * 1e6));
+    if (!closeData.serializedTxBase64) {
+      logger.error('Jupiter close API error', { market, error: closeData.message || JSON.stringify(closeData) });
+      throw new Error('Jupiter close API failed: ' + (closeData.message || 'no transaction'));
+    }
 
-    logger.info('Jupiter Perps: closing position', { market, side: pnlInfo.side, sizeUsd: Number(sizeUsd) / 1e6 });
+    const conn = getConnection();
+    const txBuf = Buffer.from(closeData.serializedTxBase64, 'base64');
+    const tx = VersionedTransaction.deserialize(txBuf);
+    tx.sign([config.protocolKeypair]);
 
-    // Borsh-serialize decrease params:
-    // collateralUsdDelta: u64, sizeUsdDelta: u64, priceSlippage: u64,
-    // jupiterMinimumOut: Option<u64> (0=None), entirePosition: Option<bool> (1=Some + 1=true), counter: u64
-    const paramsBuf = Buffer.alloc(8 + 8 + 8 + 1 + 2 + 8); // 35 bytes
-    paramsBuf.writeBigUInt64LE(BigInt(0), 0);            // collateralUsdDelta
-    paramsBuf.writeBigUInt64LE(sizeUsd, 8);              // sizeUsdDelta
-    paramsBuf.writeBigUInt64LE(BigInt(0), 16);            // priceSlippage (0 = market)
-    paramsBuf.writeUint8(0, 24);                          // jupiterMinimumOut = None
-    paramsBuf.writeUint8(1, 25);                          // entirePosition = Some
-    paramsBuf.writeUint8(1, 26);                          // entirePosition value = true
-    paramsBuf.writeBigUInt64LE(BigInt(counter), 27);      // counter
+    const sig = await conn.sendRawTransaction(tx.serialize(), {
+      skipPreflight: true,
+      maxRetries: 5,
+    });
 
-    const ixData = Buffer.concat([DISC_DECREASE, paramsBuf]);
-
-    const ix = {
-      programId: JUP_PERPS_PROGRAM_ID,
-      keys: [
-        { pubkey: wallet, isSigner: true, isWritable: true },
-        { pubkey: receivingATA, isSigner: false, isWritable: true },
-        { pubkey: perpetualsPDA, isSigner: false, isWritable: false },
-        { pubkey: JLP_POOL, isSigner: false, isWritable: false },
-        { pubkey: positionPDA, isSigner: false, isWritable: true },
-        { pubkey: positionRequestPDA, isSigner: false, isWritable: true },
-        { pubkey: positionRequestATA, isSigner: false, isWritable: true },
-        { pubkey: custodyKey, isSigner: false, isWritable: false },
-        { pubkey: collateralCustody, isSigner: false, isWritable: false },
-        { pubkey: receivingMint, isSigner: false, isWritable: false },
-        { pubkey: REFERRAL_ACCOUNT, isSigner: false, isWritable: false },
-        { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-        { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-        { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false },
-        { pubkey: JUP_PERPS_PROGRAM_ID, isSigner: false, isWritable: false },
-      ],
-      data: ixData,
-    };
-
-    const sig = await sendTx([ix], [config.protocolKeypair]);
     logger.info('Jupiter Perps: close request submitted', { market, txSig: sig });
     return { txSig: sig };
   } catch (err) {
