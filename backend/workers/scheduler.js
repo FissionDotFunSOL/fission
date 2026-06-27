@@ -43,17 +43,17 @@ export function startScheduler() {
   _abortController = new AbortController();
   logger.info('Scheduler started — all workers will run autonomously');
 
-  // Standard workers (30-120 min intervals)
+  // Per-worker intervals (seconds) — fee claimer runs most frequently
   const workers = [
-    { name: 'fee-claimer', fn: claimAllFees },
-    { name: 'position-manager', fn: manageAllPositions },
-    { name: 'buyback-engine', fn: buybackAllTokens },
-    { name: 'risk-manager', fn: runRiskCheck },
+    { name: 'fee-claimer',      fn: claimAllFees,        minSec: 180,  maxSec: 300  },  // 3-5 min
+    { name: 'position-manager',  fn: manageAllPositions,  minSec: 300,  maxSec: 480  },  // 5-8 min
+    { name: 'buyback-engine',    fn: buybackAllTokens,    minSec: 900,  maxSec: 1800 },  // 15-30 min
+    { name: 'risk-manager',      fn: runRiskCheck,        minSec: 300,  maxSec: 600  },  // 5-10 min
   ];
 
   for (const w of workers) {
     initHealth(w.name);
-    workerLoop(w.name, w.fn, _abortController.signal);
+    workerLoop(w.name, w.fn, _abortController.signal, w.minSec, w.maxSec);
   }
 
   // Fast profit-checker (60-90s intervals) — critical for high leverage
@@ -83,7 +83,7 @@ export function getWorkerHealth() {
 /**
  * Internal: run a worker function in a loop with jitter + exponential backoff on failure.
  */
-async function workerLoop(name, fn, signal) {
+async function workerLoop(name, fn, signal, minSec = 180, maxSec = 300) {
   // Stagger initial start (0-10s)
   const initialDelay = Math.random() * 10_000;
   await sleep(initialDelay);
@@ -124,15 +124,14 @@ async function workerLoop(name, fn, signal) {
 
     if (!_running || signal.aborted) break;
 
-    // Calculate next interval with exponential backoff on consecutive errors
-    let intervalMs = randomIntervalMs();
+    // Worker-specific interval with jitter
+    const sec = minSec + Math.random() * (maxSec - minSec);
+    let intervalMs = Math.round(sec * 1000);
 
     if (health.consecutiveErrors > 0) {
-      // Exponential backoff: double for each consecutive error, cap at 30 minutes
-      const backoffMultiplier = Math.min(Math.pow(2, health.consecutiveErrors - 1), 16);
-      const backoffMs = Math.min(intervalMs * backoffMultiplier, 30 * 60_000);
-      intervalMs = backoffMs;
-      logger.warn(`[${name}] Backing off: next cycle in ${(intervalMs / 60_000).toFixed(1)} min (${health.consecutiveErrors} consecutive errors)`);
+      const backoffMultiplier = Math.min(Math.pow(2, health.consecutiveErrors - 1), 8);
+      intervalMs = Math.min(intervalMs * backoffMultiplier, 15 * 60_000);
+      logger.warn(`[${name}] Backing off: next cycle in ${(intervalMs / 60_000).toFixed(1)} min`);
     } else {
       logger.info(`[${name}] Next cycle in ${(intervalMs / 60_000).toFixed(1)} minutes`);
     }
