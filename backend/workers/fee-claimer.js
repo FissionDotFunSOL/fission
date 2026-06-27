@@ -1,91 +1,124 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import { getAllTokens } from '../db/firebase.js';
-import { buildClaimFeesIx } from '../services/pumpfun.js';
 import { sendTx } from '../services/solana.js';
-import { getSolBalance } from '../services/solana.js';
 import * as db from '../db/firebase.js';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
+
+// ---------------------------------------------------------------------------
+// Fee claiming using the CORRECT pump.fun instruction accounts.
+//
+// The pump SDK's buildDistributeCreatorFeesInstructions uses the wrong
+// accounts (bonding curve as vault instead of the actual fee vault PDA).
+// This was discovered by comparing successful manual claims on pump.fun
+// with our SDK-built claims.
+//
+// The correct instruction format (discriminator a572670079cef751):
+//   [0] coin account (Token-2022 mint PDA)
+//   [1] pump program PDA (fee state)
+//   [2] fee program PDA (sharing config state)
+//   [3] fee SOL vault (where fees actually accumulate)
+//   [4] system program
+//   [5] event authority
+//   [6] pump program (self)
+//   [7] recipient wallet (signer)
+// ---------------------------------------------------------------------------
+
+const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+const DISTRIBUTE_DISC = Buffer.from('a572670079cef751', 'hex');
+const EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
+const SYSTEM_PROGRAM = new PublicKey('11111111111111111111111111111111');
+
+// Known fee account mapping for FISSION token
+// These were extracted from successful pump.fun claims
+const FEE_ACCOUNTS = {
+  '2Ymo8SHM4yhhjvnjvZue6qXfQHUJXtZt2wUCgsMZpump': {
+    coinAccount: new PublicKey('72CbNExR3v3CaftiEPEYnR7gUqqsjwpECRfhmXc7pump'),
+    pumpPda: new PublicKey('5H59SfNDYhWvy9mcwUD4Pj1NQDtjMKDb2cNUmGsof25m'),
+    feePda: new PublicKey('23RmERwaQYAgMW48aDWUW1ekH5eqjGotkkKdvdLxMhX2'),
+    feeVault: new PublicKey('GuFxjDpKtVe5mEXGPHjBAP6pPdnUNtpv5ZAZf12BbaNn'),
+  },
+};
+
+// Minimum claim threshold: 0.002 SOL (avoid wasting gas on tiny amounts)
+const MIN_CLAIM_SOL = 0.002;
+
+/**
+ * Build the distribute creator fees instruction using the correct accounts.
+ */
+function buildDistributeIx(mint) {
+  const accounts = FEE_ACCOUNTS[mint];
+  if (!accounts) {
+    logger.warn('No fee accounts configured for token', { mint });
+    return null;
+  }
+
+  return new TransactionInstruction({
+    programId: PUMP_PROGRAM,
+    data: DISTRIBUTE_DISC,
+    keys: [
+      { pubkey: accounts.coinAccount, isSigner: false, isWritable: true },
+      { pubkey: accounts.pumpPda, isSigner: false, isWritable: true },
+      { pubkey: accounts.feePda, isSigner: false, isWritable: true },
+      { pubkey: accounts.feeVault, isSigner: false, isWritable: true },
+      { pubkey: SYSTEM_PROGRAM, isSigner: false, isWritable: false },
+      { pubkey: EVENT_AUTHORITY, isSigner: false, isWritable: false },
+      { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
+      { pubkey: config.PROTOCOL_PUBKEY, isSigner: true, isWritable: true },
+    ],
+  });
+}
 
 /**
  * Run a fee-claiming cycle for a single token.
- *
- * 1. Checks if there are distributable fees (avoids wasting SOL on empty claims).
- * 2. Claims fees via Pump.fun distribute instruction.
- * 3. Measures the actual SOL received from the tx.
- * 4. Splits the claimed amount 70/30 (perps / FISSION buyback).
- * 5. Records the run + split in Firestore.
  */
 export async function claimFeesForToken(mint) {
-  logger.info('Starting fee claim', { mint });
-
   try {
-    // Check if there are actually fees to distribute before sending a tx
-    try {
-      const { createRequire } = await import('module');
-      const require = createRequire(import.meta.url);
-      const sdk = require('@pump-fun/pump-sdk');
-      const conn = new Connection(config.SOLANA_RPC_URL, 'confirmed');
-      const pump = new sdk.OnlinePumpSdk(conn);
-      const mintPk = new PublicKey(mint);
-
-      const feeInfo = await pump.getMinimumDistributableFee(mintPk);
-      const distributable = feeInfo?.distributableFees?.toNumber?.() || 0;
-
-      // Skip if no fees or fees too small (< 0.01 SOL = 10M lamports)
-      // Avoids wasting gas on tiny claims that clutter the chart
-      const MIN_CLAIM_LAMPORTS = 10_000_000; // 0.01 SOL
-      if (distributable < MIN_CLAIM_LAMPORTS) {
-        logger.debug('Fees too small to claim, skipping', {
-          mint,
-          distributableSol: (distributable / 1e9).toFixed(6),
-        });
-        return null;
-      }
-
-      logger.info('Distributable fees found', {
-        mint,
-        distributableLamports: distributable,
-        distributableSol: (distributable / 1e9).toFixed(6),
-      });
-    } catch (checkErr) {
-      // If check fails, proceed with claim anyway (might still work)
-      logger.debug('Fee check failed, proceeding with claim attempt', {
-        mint,
-        error: checkErr.message,
-      });
-    }
-
-    // Build and send the claim transaction
-    const { instructions, method } = await buildClaimFeesIx(mint);
-
-    if (!instructions || instructions.length === 0) {
-      logger.debug('No claim instructions', { mint });
+    const accounts = FEE_ACCOUNTS[mint];
+    if (!accounts) {
+      logger.debug('No fee accounts for token, skipping', { mint });
       return null;
     }
 
-    // Get balance before
+    // Check the fee vault balance directly (the actual source of truth)
     const conn = new Connection(config.SOLANA_RPC_URL, 'confirmed');
+    const vaultBal = await conn.getBalance(accounts.feeVault);
+    const vaultSol = vaultBal / 1e9;
+
+    if (vaultSol < MIN_CLAIM_SOL) {
+      logger.debug('Fee vault below threshold', {
+        mint,
+        vaultSol: vaultSol.toFixed(6),
+        threshold: MIN_CLAIM_SOL,
+      });
+      return null;
+    }
+
+    logger.info('Fee vault has claimable fees', {
+      mint,
+      vaultSol: vaultSol.toFixed(6),
+    });
+
+    // Build the correct distribute instruction
+    const ix = buildDistributeIx(mint);
+    if (!ix) return null;
+
+    // Get balance before
     const balBefore = await conn.getBalance(config.PROTOCOL_PUBKEY);
 
-    const txSig = await sendTx(instructions, [config.protocolKeypair]);
+    const txSig = await sendTx([ix], [config.protocolKeypair]);
 
     // Wait for confirmation and measure delta
     await new Promise((r) => setTimeout(r, 3000));
 
     const balAfter = await conn.getBalance(config.PROTOCOL_PUBKEY);
     const deltaLamports = balAfter - balBefore;
-    // delta > 0 means we received SOL (fees claimed minus tx fee)
-    // delta < 0 means only tx fee was paid (no fees claimed)
     const feesClaimed = deltaLamports > 0 ? deltaLamports / 1e9 : 0;
 
-    logger.info('Fee claim tx confirmed', {
+    logger.info('Fee claim completed', {
       mint,
-      method,
       txSig,
       feesClaimed: feesClaimed.toFixed(6),
-      balBefore: (balBefore / 1e9).toFixed(4),
-      balAfter: (balAfter / 1e9).toFixed(4),
     });
 
     // Only record if we actually received fees
@@ -114,7 +147,7 @@ export async function claimFeesForToken(mint) {
       ...split,
     });
 
-    logger.info('Fee claim completed', {
+    logger.info('Fees claimed and recorded', {
       mint,
       feesClaimed: feesClaimed.toFixed(6),
       positionAmount: split.positionAmount.toFixed(6),
