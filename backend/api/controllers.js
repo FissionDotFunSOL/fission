@@ -24,8 +24,8 @@ export async function listTokens(_req, res) {
     const tokens = await db.getAllTokens();
     res.json({ tokens });
   } catch (err) {
-    logger.error('listTokens error', { error: err.message });
-    res.status(500).json({ error: 'Failed to fetch tokens' });
+    logger.error('listTokens error', { error: err.message, stack: err.stack });
+    res.status(500).json({ error: 'Failed to fetch tokens', detail: err.message });
   }
 }
 
