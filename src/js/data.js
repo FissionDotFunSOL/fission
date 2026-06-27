@@ -59,7 +59,6 @@ export const MOCK_DASHBOARD_DATA = [
 // Prefixes ($ / +$) are rendered in the HTML counter-prefix spans.
 export const STATS_DATA = [
   { label: 'Active Derivatives',  value: 0,  key: 'derivatives' },
-  { label: 'Total Fees Claimed',  value: 0,  key: 'fees' },
   { label: 'Position PnL',        value: 0,  key: 'pnl' },
   { label: 'Buybacks Executed',   value: 0,  key: 'buybacks' },
 ];

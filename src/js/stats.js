@@ -65,7 +65,6 @@ async function fetchStats() {
 
       return [
         { key: 'derivatives',    value: s.activeTokens || s.totalTokens || 0, decimals: 0 },
-        { key: 'fees',           value: s.totalFeesClaimed || 0, decimals: 2 },
         { key: 'pnl',            value: pnl, decimals: 2 },
         { key: 'walletBalance',  value: s.walletBalanceSol || 0, decimals: 4 },
         { key: 'buybackSol',     value: s.totalBuybackSol || 0, decimals: 2 },
