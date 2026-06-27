@@ -356,44 +356,46 @@ export async function getStats(_req, res) {
       db.getAllBuybacks(),
     ]);
 
-    // Get correction offsets for manual operations done outside workers
-    let feesOffset = 0, pnlOffset = 0, buybackSolOffset = 0, buybackCountOffset = 0;
+    // Historical on-chain baselines (from full tx history scan)
+    let feesOffset = 0, perpDeployedOffset = 0, perpReturnedOffset = 0;
     try {
       const statsConfig = await db.getDoc('config', 'stats');
       feesOffset = statsConfig?.feesClaimedOffset || 0;
-      pnlOffset = statsConfig?.perpPnlOffset || 0;
-      buybackSolOffset = statsConfig?.buybackSolOffset || 0;
-      buybackCountOffset = statsConfig?.buybackCountOffset || 0;
+      perpDeployedOffset = statsConfig?.perpSolDeployedOffset || 0;
+      perpReturnedOffset = statsConfig?.perpSolReturnedOffset || 0;
     } catch {}
 
-    const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0) + feesOffset;
-    const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0) + buybackSolOffset;
-    const totalBurned      = buybacks.reduce((sum, b) => sum + (b.tokensBurned || 0), 0);
-    const totalBuybacks    = buybacks.length + buybackCountOffset;
+    // Fees: historical baseline + any new runs with real fee data
+    const newFees = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0);
+    const totalFeesClaimed = feesOffset + newFees;
 
-    // Get live PnL from Jupiter Perps API instead of stale DB
-    let livePnl = 0;
+    // Perp stats: historical baseline + DB position records
+    const dbDeployed = positions.reduce((sum, p) => sum + (p.deployedSol || 0), 0);
+    const dbReturned = positions.reduce((sum, p) => sum + (p.returnedSol || 0), 0);
+    const perpSolDeployed = perpDeployedOffset + dbDeployed;
+    const perpSolReturned = perpReturnedOffset + dbReturned;
+    const netPerpPnl = perpSolReturned - perpSolDeployed;
+
+    // Get wallet SOL balance
+    let walletBalance = 0;
+    try {
+      const { getSolBalance } = await import('../services/solana.js');
+      walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    } catch {}
+
+    // Check for live position on Jupiter
     let hasLivePosition = false;
+    let livePositionPnlUsd = 0;
     try {
       const walletAddress = config.PROTOCOL_PUBKEY.toBase58();
       const jupResp = await fetch(`https://perps-api.jup.ag/v1/positions?walletAddress=${walletAddress}`);
       if (jupResp.ok) {
         const jupData = await jupResp.json();
         for (const p of (jupData.dataList || [])) {
-          livePnl += parseFloat(p.pnlAfterFeesUsd) || 0;
+          livePositionPnlUsd += parseFloat(p.pnlAfterFeesUsd) || 0;
           hasLivePosition = true;
         }
       }
-    } catch {}
-
-    // Use live PnL if available, otherwise fall back to DB
-    const totalPnl = hasLivePosition ? livePnl : (positions.reduce((sum, p) => sum + (p.pnl || 0), 0) + pnlOffset);
-
-    // Get wallet SOL balance for display
-    let walletBalance = 0;
-    try {
-      const { getSolBalance } = await import('../services/solana.js');
-      walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
     } catch {}
 
     res.json({
@@ -401,14 +403,14 @@ export async function getStats(_req, res) {
         totalTokens: tokens.length,
         activeTokens: tokens.filter((t) => t.status === 'active').length,
         openPositions: positions.filter(p => (p.deployedSol || 0) > 0).length,
-        totalRuns: runs.length,
-        totalFeesClaimed,
-        totalPnl,
-        totalBuybackSol,
-        totalBurned,
-        totalBuybacks,
+        totalFeesClaimed: Math.round(totalFeesClaimed * 100) / 100,
+        perpSolDeployed: Math.round(perpSolDeployed * 100) / 100,
+        perpSolReturned: Math.round(perpSolReturned * 100) / 100,
+        netPerpPnl: Math.round(netPerpPnl * 100) / 100,
         walletBalanceSol: Math.round(walletBalance * 10000) / 10000,
         hasLivePosition,
+        livePositionPnlUsd: Math.round(livePositionPnlUsd * 100) / 100,
+        totalBuybacks: buybacks.length,
         uptime: process.uptime(),
       },
     });

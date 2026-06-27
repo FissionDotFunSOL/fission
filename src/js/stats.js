@@ -48,33 +48,28 @@ export function initStats() {
 
 async function fetchStats() {
   try {
-    const [statsRes, buybacksRes] = await Promise.all([
-      fetch('/api/v1/stats'),
-      fetch('/api/v1/buybacks'),
-    ]);
-
+    const statsRes = await fetch('/api/v1/stats');
     const statsJson = statsRes.ok ? await statsRes.json() : {};
-    const buybacksJson = buybacksRes.ok ? await buybacksRes.json() : {};
-
-    const buybacks = buybacksJson.buybacks || [];
-    let totalBurned = 0;
-    let totalBurnedSol = 0;
-    let buybackCount = 0;
-
-    for (const b of buybacks) {
-      totalBurned += b.tokensBurned || 0;
-      totalBurnedSol += b.amountSol || 0;
-      buybackCount++;
-    }
 
     if (statsJson.stats) {
+      const s = statsJson.stats;
+      const pnl = s.netPerpPnl || 0;
+
+      // Color the PnL element after animation
+      setTimeout(() => {
+        const pnlEl = document.getElementById('pnl-value');
+        if (pnlEl) {
+          pnlEl.style.color = pnl >= 0 ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
+        }
+      }, 100);
+
       return [
-        { key: 'derivatives', value: statsJson.stats.activeTokens || statsJson.stats.totalTokens || 0, decimals: 0 },
-        { key: 'fees',        value: statsJson.stats.totalFeesClaimed || 0, decimals: 2 },
-        { key: 'pnl',         value: statsJson.stats.totalPnl || 0, decimals: 2 },
-        { key: 'buybacks',    value: buybackCount || (statsJson.stats.totalBuybacks || 0), decimals: 0 },
-        { key: 'totalBurned', value: totalBurned, decimals: 0 },
-        { key: 'totalBurnedSol', value: Math.round(totalBurnedSol * 10000) / 10000, decimals: 4 },
+        { key: 'derivatives',    value: s.activeTokens || s.totalTokens || 0, decimals: 0 },
+        { key: 'fees',           value: s.totalFeesClaimed || 0, decimals: 2 },
+        { key: 'pnl',            value: pnl, decimals: 2 },
+        { key: 'walletBalance',  value: s.walletBalanceSol || 0, decimals: 4 },
+        { key: 'perpDeployed',   value: s.perpSolDeployed || 0, decimals: 2 },
+        { key: 'perpReturned',   value: s.perpSolReturned || 0, decimals: 2 },
       ];
     }
 
@@ -109,6 +104,8 @@ function animateAllCounters(counters, stats) {
 
 function animateCounter(el, stat) {
   const target = stat.value;
+  const absTarget = Math.abs(target);
+  const prefix = target < 0 ? '-' : '';
   const duration = 2200;
   const startTime = performance.now();
 
@@ -121,16 +118,16 @@ function animateCounter(el, stat) {
     const progress = Math.min(elapsed / duration, 1);
     const easedProgress = easeOutExpo(progress);
     const currentValue = stat.decimals
-      ? Math.round(easedProgress * target * Math.pow(10, stat.decimals)) / Math.pow(10, stat.decimals)
-      : Math.round(easedProgress * target);
+      ? Math.round(easedProgress * absTarget * Math.pow(10, stat.decimals)) / Math.pow(10, stat.decimals)
+      : Math.round(easedProgress * absTarget);
 
-    el.textContent = formatNumber(currentValue, stat.decimals || 0);
+    el.textContent = prefix + formatNumber(currentValue, stat.decimals || 0);
 
     if (progress < 1) {
       requestAnimationFrame(update);
     } else {
       // Final value with pop
-      el.textContent = formatNumber(target, stat.decimals || 0);
+      el.textContent = prefix + formatNumber(absTarget, stat.decimals || 0);
       el.classList.add('number-pop');
       setTimeout(() => el.classList.remove('number-pop'), 300);
     }
