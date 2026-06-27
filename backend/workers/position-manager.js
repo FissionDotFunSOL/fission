@@ -11,7 +11,7 @@ import { retry } from '../utils/helpers.js';
 // Simple high-risk strategy:
 //
 // 1. If no position exists and wallet has enough SOL -> open ONE position
-//    at the configured leverage (default 50x for SOL).
+//    at the token's configured leverage (matches the derivative coin).
 // 2. If a position exists -> DON'T touch it. No adding, no closing, no
 //    reopening. Let it ride.
 // 3. Take profit only when PnL > $100 (configurable).
@@ -19,7 +19,6 @@ import { retry } from '../utils/helpers.js';
 // ---------------------------------------------------------------------------
 
 const MIN_PROFIT_TO_TAKE = 100; // $100 minimum before taking profit
-const TARGET_LEVERAGE = 50;     // Sweet spot: high enough for $100+ on 1-2% moves, not so high it gets liquidated instantly
 
 /**
  * Manage the single shared position.
@@ -125,10 +124,14 @@ export async function managePositionForToken(mint) {
     const solPrice = await getSolPrice();
     if (solPrice <= 0) return null;
 
+    // Use the token's configured leverage (matches the derivative coin)
+    const leverage = token.leverage || config.RISK.leverage || 100;
+    const maxLev = perps.getMaxLeverage(market);
+    const effectiveLeverage = Math.min(leverage, maxLev);
+
     const deployAmount = available;
     const collateralUsd = deployAmount * solPrice;
-    const leverage = TARGET_LEVERAGE;
-    const sizeUsd = collateralUsd * leverage;
+    const sizeUsd = collateralUsd * effectiveLeverage;
 
     if (sizeUsd < 100) {
       logger.debug('Position too small', { mint, sizeUsd: sizeUsd.toFixed(2) });
@@ -139,7 +142,7 @@ export async function managePositionForToken(mint) {
 
     logger.info('Opening position', {
       mint, market, direction,
-      leverage: leverage + 'x',
+      leverage: effectiveLeverage + 'x',
       collateralSol: deployAmount.toFixed(4),
       sizeUsd: sizeUsd.toFixed(0),
     });
@@ -153,7 +156,7 @@ export async function managePositionForToken(mint) {
       tokenMint: mint,
       side: direction,
       market,
-      leverage,
+      leverage: effectiveLeverage,
       deployedSol: deployAmount,
       sizeUsd,
       lastAction: 'open',
