@@ -26,6 +26,9 @@ router.get('/runs',            ctrl.listRuns);
 // Stats
 router.get('/stats',           ctrl.getStats);
 
+// Trade History
+router.get('/trades',          ctrl.getTradeHistory);
+
 // Markets (available Jupiter Perps markets)
 router.get('/markets',         ctrl.listMarkets);
 

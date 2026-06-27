@@ -461,3 +461,95 @@ export async function triggerWorker(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Trade History — on-chain perp trades
+// ---------------------------------------------------------------------------
+let _tradeCache = { data: null, expiresAt: 0 };
+
+export async function getTradeHistory(_req, res) {
+  try {
+    // Cache for 30s to avoid hammering RPC
+    if (_tradeCache.data && Date.now() < _tradeCache.expiresAt) {
+      return res.json({ trades: _tradeCache.data });
+    }
+
+    const { Connection } = await import('@solana/web3.js');
+    const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+    const wallet = config.PROTOCOL_PUBKEY;
+    const walletStr = wallet.toBase58();
+
+    const sigs = await conn.getSignaturesForAddress(wallet, { limit: 60 });
+    const trades = [];
+
+    for (const sig of sigs) {
+      try {
+        const tx = await conn.getTransaction(sig.signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+        if (!tx || !tx.meta || tx.meta.err) continue;
+
+        const logs = tx.meta.logMessages?.join(' ') || '';
+        // Only Jupiter Perps txs
+        if (!logs.includes('PERPHjGBqRHArX4DySjwM6UJHiR3sWAatqfdBS2qQJu')) continue;
+
+        // Find wallet SOL delta
+        const accounts = tx.transaction.message.staticAccountKeys || tx.transaction.message.accountKeys;
+        let walletIdx = -1;
+        for (let i = 0; i < accounts.length; i++) {
+          const pk = typeof accounts[i] === 'string' ? accounts[i] : accounts[i].toBase58();
+          if (pk === walletStr) { walletIdx = i; break; }
+        }
+        if (walletIdx < 0) continue;
+
+        const pre = tx.meta.preBalances[walletIdx] || 0;
+        const post = tx.meta.postBalances[walletIdx] || 0;
+        const deltaSol = (post - pre) / 1e9;
+
+        // Determine action from logs
+        let action = 'Unknown';
+        let pnl = null;
+        if (logs.includes('IncreasePosition') || logs.includes('increase_position') || logs.includes('OpenPosition') || logs.includes('open_position')) {
+          action = 'Increase Long';
+        } else if (logs.includes('DecreasePosition') || logs.includes('decrease_position') || logs.includes('ClosePosition') || logs.includes('close_position')) {
+          action = 'Decrease Long';
+          if (deltaSol > 0.01) {
+            pnl = deltaSol;
+          }
+        }
+
+        // Try to extract size from log messages
+        let sizeUsd = null;
+        const sizeMatch = logs.match(/size[_: ]*(\d+)/i);
+        if (sizeMatch) {
+          const rawSize = parseInt(sizeMatch[1]);
+          if (rawSize > 100) sizeUsd = rawSize / 1e6; // might be in micro-USD
+        }
+
+        // Get fee from tx fee
+        const fee = (tx.meta.fee || 5000) / 1e9;
+
+        trades.push({
+          signature: sig.signature,
+          time: tx.blockTime ? new Date(tx.blockTime * 1000).toISOString() : null,
+          position: 'SOL',
+          action,
+          orderType: 'Market',
+          depositWithdraw: deltaSol,
+          sizeUsd: sizeUsd || Math.abs(deltaSol * 72), // rough estimate if no size found
+          pnl,
+          fee,
+        });
+      } catch (e) {
+        // Skip unparseable txs
+      }
+    }
+
+    _tradeCache = { data: trades, expiresAt: Date.now() + 30_000 };
+    res.json({ trades });
+  } catch (err) {
+    logger.error('getTradeHistory error', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch trade history' });
+  }
+}

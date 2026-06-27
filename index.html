@@ -233,6 +233,40 @@
   <div class="container"><hr class="divider" /></div>
 
   <!-- ═══════════════════════════════════════════════════════
+       TRADE HISTORY
+       ═══════════════════════════════════════════════════════ -->
+  <section class="section" id="trades">
+    <div class="container">
+      <div class="section-header reveal">
+        <span class="section-label">On-chain verified</span>
+        <h2 class="section-title">Trade History</h2>
+        <p class="section-subtitle">Live perpetual trading activity from the protocol wallet.</p>
+      </div>
+
+      <div class="reveal" style="overflow-x:auto;max-width:1000px;margin:0 auto;">
+        <table id="trade-history-table" style="width:100%;border-collapse:collapse;font-family:var(--font-mono);font-size:0.75rem;">
+          <thead>
+            <tr style="border-bottom:1px solid rgba(0,255,170,0.15);color:var(--text-muted);text-transform:uppercase;font-size:0.6rem;letter-spacing:0.1em;">
+              <th style="padding:12px 8px;text-align:left;">Position</th>
+              <th style="padding:12px 8px;text-align:left;">Action</th>
+              <th style="padding:12px 8px;text-align:right;">Deposit / Withdraw</th>
+              <th style="padding:12px 8px;text-align:right;">PnL</th>
+              <th style="padding:12px 8px;text-align:right;">Fee</th>
+              <th style="padding:12px 8px;text-align:right;">Time</th>
+              <th style="padding:12px 8px;text-align:center;">TX</th>
+            </tr>
+          </thead>
+          <tbody id="trade-history-body">
+            <tr><td colspan="7" style="padding:32px;text-align:center;color:var(--text-muted);">Loading trades...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <div class="container"><hr class="divider" /></div>
+
+  <!-- ═══════════════════════════════════════════════════════
        DASHBOARD
        ═══════════════════════════════════════════════════════ -->
   <section class="section" id="dashboard">
