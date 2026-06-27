@@ -69,12 +69,12 @@ async function fetchStats() {
 
     if (statsJson.stats) {
       return [
-        { key: 'derivatives', value: statsJson.stats.activeTokens || statsJson.stats.totalTokens || 0 },
-        { key: 'fees',        value: statsJson.stats.totalFeesClaimed || 0 },
-        { key: 'pnl',         value: Math.abs(statsJson.stats.totalPnl || 0) },
-        { key: 'buybacks',    value: buybackCount || (statsJson.stats.totalBuybacks || 0) },
-        { key: 'totalBurned', value: totalBurned },
-        { key: 'totalBurnedSol', value: Math.round(totalBurnedSol * 10000) / 10000 },
+        { key: 'derivatives', value: statsJson.stats.activeTokens || statsJson.stats.totalTokens || 0, decimals: 0 },
+        { key: 'fees',        value: statsJson.stats.totalFeesClaimed || 0, decimals: 2 },
+        { key: 'pnl',         value: Math.abs(statsJson.stats.totalPnl || 0), decimals: 2 },
+        { key: 'buybacks',    value: buybackCount || (statsJson.stats.totalBuybacks || 0), decimals: 0 },
+        { key: 'totalBurned', value: totalBurned, decimals: 0 },
+        { key: 'totalBurnedSol', value: Math.round(totalBurnedSol * 10000) / 10000, decimals: 4 },
       ];
     }
 
@@ -89,7 +89,7 @@ function applyStatsToCounters(counters, stats) {
     const key = el.getAttribute('data-counter');
     const stat = stats.find(s => s.key === key);
     if (stat) {
-      el.textContent = formatNumber(stat.value);
+      el.textContent = formatNumber(stat.value, stat.decimals || 0);
     }
   });
 }
@@ -120,15 +120,17 @@ function animateCounter(el, stat) {
     const elapsed = currentTime - startTime;
     const progress = Math.min(elapsed / duration, 1);
     const easedProgress = easeOutExpo(progress);
-    const currentValue = Math.round(easedProgress * target);
+    const currentValue = stat.decimals
+      ? Math.round(easedProgress * target * Math.pow(10, stat.decimals)) / Math.pow(10, stat.decimals)
+      : Math.round(easedProgress * target);
 
-    el.textContent = formatNumber(currentValue);
+    el.textContent = formatNumber(currentValue, stat.decimals || 0);
 
     if (progress < 1) {
       requestAnimationFrame(update);
     } else {
       // Final value with pop
-      el.textContent = formatNumber(target);
+      el.textContent = formatNumber(target, stat.decimals || 0);
       el.classList.add('number-pop');
       setTimeout(() => el.classList.remove('number-pop'), 300);
     }
