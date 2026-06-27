@@ -21,6 +21,25 @@ export async function claimFeesForToken(mint) {
   logger.info('Starting fee claim', { mint });
 
   try {
+    // Check claimable balance first — skip if under 0.5 SOL
+    const MIN_CLAIM_SOL = 0.5;
+    try {
+      const token = await db.getToken(mint);
+      if (token?.sharingConfigPDA) {
+        const { Connection, PublicKey } = await import('@solana/web3.js');
+        const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+        const pdaBalance = await conn.getBalance(new PublicKey(token.sharingConfigPDA));
+        const pdaSol = pdaBalance / 1e9;
+        logger.info('Fee account balance', { mint, pda: token.sharingConfigPDA, balance: pdaSol.toFixed(4) });
+        if (pdaSol < MIN_CLAIM_SOL) {
+          logger.info('Below minimum claim threshold, skipping', { mint, balance: pdaSol.toFixed(4), threshold: MIN_CLAIM_SOL });
+          return null;
+        }
+      }
+    } catch (balErr) {
+      logger.warn('Fee balance check failed (proceeding anyway)', { error: balErr.message });
+    }
+
     // Execute claim
     const txSig = await claimFees(mint);
     if (!txSig) {
