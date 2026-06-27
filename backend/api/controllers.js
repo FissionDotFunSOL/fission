@@ -368,7 +368,7 @@ export async function getStats(_req, res) {
       stats: {
         totalTokens: tokens.length,
         activeTokens: tokens.filter((t) => t.status === 'active').length,
-        openPositions: positions.length,
+        openPositions: positions.filter(p => (p.deployedSol || 0) > 0).length,
         totalRuns: runs.length,
         totalFeesClaimed,
         totalPnl,
@@ -431,6 +431,13 @@ export async function listMarkets(_req, res) {
 // Admin: manually trigger a worker cycle
 // ---------------------------------------------------------------------------
 export async function triggerWorker(req, res) {
+  // Basic auth check — only allow with admin key
+  const authKey = req.headers['x-admin-key'] || req.query.key;
+  const expectedKey = process.env.ADMIN_API_KEY;
+  if (expectedKey && authKey !== expectedKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
   const { worker } = req.params;
 
   const validWorkers = ['fee-claimer', 'position-manager', 'buyback-engine', 'risk-manager'];
@@ -537,7 +544,7 @@ export async function getTradeHistory(_req, res) {
           action,
           orderType: 'Market',
           depositWithdraw: deltaSol,
-          sizeUsd: sizeUsd || Math.abs(deltaSol * 72), // rough estimate if no size found
+          sizeUsd: sizeUsd || null,
           pnl,
           fee,
         });

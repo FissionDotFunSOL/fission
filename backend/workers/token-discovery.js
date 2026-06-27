@@ -1,7 +1,7 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { getConnection } from '../services/solana.js';
 
 /**
  * Scans recent transactions on the protocol wallet for Pump.fun fee distributions
@@ -11,7 +11,7 @@ export async function discoverNewTokens() {
   logger.info('Running token auto-discovery');
 
   try {
-    const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+    const conn = getConnection();
     const wallet = config.PROTOCOL_PUBKEY;
 
     // Get existing tokens

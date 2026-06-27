@@ -90,7 +90,6 @@ export async function managePositionForToken(mint) {
     // -----------------------------------------------------------------------
     if (pnlInfo.exists && deployedAmount > 0) {
       // Find all tokens that share this market + side combination
-      const allTokens = await db.getAllTokens();
       const allPositions = await db.getAllPositions();
       const sameMarketPositions = allPositions.filter(p =>
         p.market === market && p.side === (token.side || 'long') && (p.deployedSol || 0) > 0

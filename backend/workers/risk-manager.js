@@ -118,16 +118,16 @@ async function checkTokenRisk(token, freeCollateral) {
   // Check 1: Liquidation proximity
   // If collateral ratio is dangerously low relative to position size
   // -----------------------------------------------------------------------
-  if (pnlInfo.collateral > 0 && pnlInfo.size !== 0) {
+  if (pnlInfo.collateralUsd > 0 && pnlInfo.size !== 0) {
     const positionNotional = Math.abs(pnlInfo.size);
-    const marginRatio = pnlInfo.collateral / positionNotional;
+    const marginRatio = pnlInfo.collateralUsd / positionNotional;
 
     if (marginRatio < config.RISK.liquidationWarningPct) {
       logger.warn('LIQUIDATION PROXIMITY WARNING', {
         mint,
         market,
         marginRatio: (marginRatio * 100).toFixed(1) + '%',
-        collateral: pnlInfo.collateral.toFixed(2),
+        collateral: pnlInfo.collateralUsd.toFixed(2),
         positionNotional: positionNotional.toFixed(2),
       });
 
