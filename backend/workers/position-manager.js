@@ -30,17 +30,8 @@ export async function managePositionForToken(mint) {
     // Get existing position from DB
     let position = await db.getPosition(mint);
 
-    // Calculate available funds from fee splits for this token
-    const splits = await db.queryDocs('splits', [['tokenMint', '==', mint]], 'runId', 200);
-    const totalPositionFund = splits.reduce((sum, s) => sum + (s.positionAmount || 0), 0);
-
     // Amount already deployed
     const deployedAmount = position?.deployedSol || 0;
-    const availableToDeployRaw = totalPositionFund - deployedAmount;
-
-    // Reserve cash buffer (5% of position fund kept as safety margin)
-    const reserveAmount = availableToDeployRaw * config.RISK.reservePct;
-    const availableToDeploy = Math.max(0, availableToDeployRaw - reserveAmount);
 
     // Resolve market — check against all supported perps markets (Jupiter + Flash)
     const underlying = token.underlying?.toUpperCase();
@@ -52,6 +43,39 @@ export async function managePositionForToken(mint) {
       logger.warn('No perps market available for token, skipping', { mint, underlying: token.underlying });
       return null;
     }
+
+    // Simple momentum check — only open long if price is trending up
+    const direction = token.side || 'long';
+    if (direction === 'long' && deployedAmount === 0) {
+      try {
+        const currentPrice = await getSolPrice();
+        // Wait 5s and check again for micro-trend
+        await new Promise(r => setTimeout(r, 5000));
+        const secondPrice = await getSolPrice();
+        if (secondPrice < currentPrice * 0.999) {
+          logger.info('Momentum check: price dipping, waiting for better entry', {
+            mint, market, priceBefore: currentPrice.toFixed(2), priceAfter: secondPrice.toFixed(2),
+          });
+          return null;
+        }
+        logger.info('Momentum check passed', {
+          mint, market, priceBefore: currentPrice.toFixed(2), priceAfter: secondPrice.toFixed(2),
+        });
+      } catch (momErr) {
+        logger.warn('Momentum check failed (proceeding)', { error: momErr.message });
+      }
+    }
+
+    // Use wallet balance directly instead of splits accounting
+    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    const minBalance = config.RISK.minWalletBalanceSol;
+    const totalAvailable = Math.max(0, walletBalance - minBalance);
+
+    // Divide available SOL among active tokens that need deployment
+    const allTokens = await db.getAllTokens();
+    const activeCount = allTokens.filter(t => t.status === 'active').length || 1;
+    const perTokenMax = totalAvailable / activeCount;
+    const availableToDeploy = Math.max(0, perTokenMax - deployedAmount);
 
     // Check current on-chain position PnL (with retry for RPC reliability)
     const pnlInfo = await retry(
@@ -185,11 +209,9 @@ export async function managePositionForToken(mint) {
     }
 
     // -----------------------------------------------------------------------
-    // Check 2: Wallet gas buffer — NEVER go below minWalletBalanceSol
+    // Check 2: Wallet gas buffer — already computed above
     // -----------------------------------------------------------------------
-    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
-    const minBalance = config.RISK.minWalletBalanceSol;
-    const maxDeployable = Math.max(0, walletBalance - minBalance);
+    const maxDeployable = totalAvailable;
 
     if (maxDeployable <= 0) {
       logger.warn('Wallet balance too low for gas fees, skipping deployment', {

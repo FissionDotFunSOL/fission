@@ -198,32 +198,33 @@
       <div class="section-header reveal">
         <span class="section-label">Live stats</span>
         <h2 class="section-title">Protocol Metrics</h2>
+        <p class="section-subtitle">Real-time on-chain data. Updated every 30 seconds.</p>
       </div>
 
-      <div class="stats-grid reveal stagger" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
-        <div class="stat-block">
-          <div class="stat-value"><span data-counter="derivatives">0</span></div>
-          <div class="stat-label">Active Tokens</div>
+      <div class="stats-grid reveal stagger" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;max-width:900px;margin:0 auto;">
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--accent);line-height:1;"><span data-counter="derivatives">0</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">Registered Tokens</div>
         </div>
-        <div class="stat-block">
-          <div class="stat-value"><span data-counter="fees">0</span> <span style="font-size:0.6em;color:var(--text-muted);">SOL</span></div>
-          <div class="stat-label">Fees Claimed</div>
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--text-primary);line-height:1;"><span data-counter="fees">0</span> <span style="font-size:0.4em;color:var(--text-muted);">SOL</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">Total Fees Claimed</div>
         </div>
-        <div class="stat-block">
-          <div class="stat-value"><span class="prefix">+</span><span data-counter="pnl">0</span> <span style="font-size:0.6em;color:var(--text-muted);">SOL</span></div>
-          <div class="stat-label">Perp PnL</div>
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--text-primary);line-height:1;"><span data-counter="pnl">0</span> <span style="font-size:0.4em;color:var(--text-muted);">SOL</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">Perp PnL</div>
         </div>
-        <div class="stat-block">
-          <div class="stat-value"><span data-counter="buybacks">0</span></div>
-          <div class="stat-label">Buybacks</div>
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--text-primary);line-height:1;"><span data-counter="buybacks">0</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">Buybacks Executed</div>
         </div>
-        <div class="stat-block">
-          <div class="stat-value"><span data-counter="totalBurned">0</span></div>
-          <div class="stat-label">Total Tokens Burned</div>
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--text-primary);line-height:1;"><span data-counter="totalBurned">0</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">Tokens Burned</div>
         </div>
-        <div class="stat-block">
-          <div class="stat-value"><span data-counter="totalBurnedSol">0</span> <span style="font-size:0.6em;color:var(--text-muted);">SOL</span></div>
-          <div class="stat-label">SOL Spent on Burns</div>
+        <div style="background:rgba(0,255,170,0.03);border:1px solid rgba(0,255,170,0.15);border-radius:4px;padding:28px 20px;text-align:center;">
+          <div style="font-family:var(--font-mono);font-size:2.2rem;font-weight:700;color:var(--text-primary);line-height:1;"><span data-counter="totalBurnedSol">0</span> <span style="font-size:0.4em;color:var(--text-muted);">SOL</span></div>
+          <div style="font-family:var(--font-mono);font-size:0.6rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.12em;margin-top:10px;">SOL Spent on Burns</div>
         </div>
       </div>
     </div>
