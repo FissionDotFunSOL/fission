@@ -8,21 +8,67 @@ import { getSolBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
 
 // ---------------------------------------------------------------------------
-// Simple high-risk strategy:
+// High-Leverage Scalping Strategy
 //
-// 1. If no position exists and wallet has enough SOL -> open ONE position
-//    at the token's configured leverage (matches the derivative coin).
-// 2. If a position exists -> DON'T touch it. No adding, no closing, no
-//    reopening. Let it ride.
-// 3. Take profit only when PnL > $100 (configurable).
-// 4. Only manage ONE position at a time. All tokens share it.
+// Based on professional high-leverage trading patterns:
+// 1. Open ONE position at the token's configured leverage
+// 2. Use a 3-stage exit system:
+//    Stage 1: Move SL to breakeven once +1% profit hit
+//    Stage 2: Take 50% profit at +3% gain
+//    Stage 3: Trail remaining 50% with a 1.5% trailing stop
+// 3. Hard stop loss at -50% of collateral (before liquidation)
+// 4. Never add to a losing position
+// 5. After close, wait for next fee cycle before re-entering
+//
+// Key principle: let winners run, cut losers fast.
 // ---------------------------------------------------------------------------
 
-const MIN_PROFIT_TO_TAKE = 100; // $100 minimum before taking profit
+// Strategy parameters (tuned for high-leverage SOL perps)
+const STRATEGY = {
+  // Stop loss: close at this % loss of collateral to avoid liquidation
+  // At 100x, 1% price drop = 100% loss. We exit at 0.4% adverse move
+  // to preserve capital. At 250x, exit at 0.15% adverse.
+  stopLossCollateralPct: -0.40,   // -40% of collateral value
+
+  // Breakeven: move mental SL to entry once this profit % is hit
+  breakevenPct: 0.01,             // 1% price move in our favor
+
+  // Take profit stage 1: close 50% at this gain
+  tp1Pct: 0.03,                   // 3% price move = close half
+  tp1ReducePct: 0.50,             // close 50% of position
+
+  // Take profit stage 2: trail the rest with this callback
+  trailingCallbackPct: 0.015,     // 1.5% trailing stop on remainder
+
+  // Minimum profit to bother taking (avoid dust)
+  minProfitUsd: 5,
+
+  // Cooldown: don't re-enter for this many ms after a close
+  cooldownMs: 5 * 60 * 1000,     // 5 minutes
+
+  // Daily loss limit: stop trading if total losses exceed this
+  dailyLossLimitUsd: -500,
+};
 
 /**
- * Manage the single shared position.
- * Called for each token but only the first active token actually opens/manages.
+ * Get or create the strategy state for a position.
+ * Tracks breakeven/TP stages and trailing stop high-water mark.
+ */
+async function getStrategyState(mint) {
+  const pos = await db.getPosition(mint);
+  return {
+    stage: pos?.strategyStage || 'watching',  // watching | breakeven | trailing
+    highWaterPnl: pos?.highWaterPnl || 0,
+    highWaterPrice: pos?.highWaterPrice || 0,
+    tp1Hit: pos?.tp1Hit || false,
+    lastCloseAt: pos?.lastCloseAt || 0,
+    dailyLoss: pos?.dailyLoss || 0,
+    dailyLossDate: pos?.dailyLossDate || new Date().toDateString(),
+  };
+}
+
+/**
+ * Main position management for a single token.
  */
 export async function managePositionForToken(mint) {
   try {
@@ -34,6 +80,8 @@ export async function managePositionForToken(mint) {
       ? underlying : null;
     if (!market) return null;
 
+    const direction = token.side || 'long';
+
     // Check live on-chain position
     const pnlInfo = await retry(
       () => perps.getPositionPnl(market),
@@ -41,104 +89,264 @@ export async function managePositionForToken(mint) {
     );
 
     // -------------------------------------------------------------------
-    // CASE 1: Position exists -> monitor PnL, take profit if big enough
+    // CASE 1: Position exists -> run the strategy engine
     // -------------------------------------------------------------------
     if (pnlInfo.exists) {
       const position = await db.getPosition(mint);
       const deployedAmount = position?.deployedSol || 0;
+      if (deployedAmount <= 0) return null;
 
-      // Update PnL in DB
-      if (deployedAmount > 0) {
-        await db.setPosition(mint, {
-          ...position,
-          tokenMint: mint,
-          pnl: pnlInfo.pnl || 0,
-          entry: pnlInfo.entry || position?.entry || 0,
-          updatedAt: Date.now(),
-        });
-      }
+      const state = await getStrategyState(mint);
+      const pnl = pnlInfo.pnl || 0;
+      const currentPrice = pnlInfo.currentPrice || 0;
+      const entryPrice = pnlInfo.entry || position?.entry || 0;
 
-      // Take profit if PnL exceeds minimum threshold
-      if (pnlInfo.pnl >= MIN_PROFIT_TO_TAKE && deployedAmount > 0) {
-        logger.info('TAKE PROFIT -- PnL exceeds $' + MIN_PROFIT_TO_TAKE, {
-          mint, market, pnl: pnlInfo.pnl.toFixed(2),
+      // Calculate price change percentage from entry
+      const priceChangePct = entryPrice > 0 ? (currentPrice - entryPrice) / entryPrice : 0;
+      // For shorts, invert the sign
+      const effectivePct = direction === 'short' ? -priceChangePct : priceChangePct;
+
+      // Calculate collateral-based PnL percentage
+      const solPrice = await getSolPrice();
+      const collateralUsd = deployedAmount * (solPrice || 72);
+      const pnlPct = collateralUsd > 0 ? pnl / collateralUsd : 0;
+
+      // Update DB with latest PnL
+      const updateData = {
+        ...position,
+        tokenMint: mint,
+        pnl,
+        entry: entryPrice,
+        currentPrice,
+        priceChangePct: effectivePct,
+        updatedAt: Date.now(),
+      };
+
+      // ---- HARD STOP LOSS ----
+      // Exit before liquidation. This is the most important rule.
+      if (pnlPct <= STRATEGY.stopLossCollateralPct) {
+        logger.info('STOP LOSS triggered', {
+          mint, market, pnl: pnl.toFixed(2),
+          pnlPct: (pnlPct * 100).toFixed(1) + '%',
+          threshold: (STRATEGY.stopLossCollateralPct * 100) + '%',
         });
 
         try {
-          // Close the entire position (not partial reduce)
           const closeResult = await retry(
-            () => perps.closePosition(market, token.side || 'long'),
-            { retries: 2, delayMs: 3000, label: `takeProfit(${market})` }
+            () => perps.closePosition(market, direction),
+            { retries: 2, delayMs: 2000, label: `stopLoss(${market})` }
+          );
+
+          // Track daily loss
+          const todayStr = new Date().toDateString();
+          const dailyLoss = (state.dailyLossDate === todayStr ? state.dailyLoss : 0) + pnl;
+
+          await db.setPosition(mint, {
+            ...updateData,
+            deployedSol: 0,
+            lastAction: 'stop-loss',
+            lastActionAt: Date.now(),
+            lastCloseAt: Date.now(),
+            pnl: 0,
+            strategyStage: 'watching',
+            highWaterPnl: 0,
+            highWaterPrice: 0,
+            tp1Hit: false,
+            dailyLoss,
+            dailyLossDate: todayStr,
+          });
+
+          logger.info('Stop loss executed', { mint, pnl: pnl.toFixed(2), txSig: closeResult?.txSig });
+          return { action: 'stop-loss', pnl, txSig: closeResult?.txSig };
+        } catch (err) {
+          logger.error('Stop loss failed', { mint, error: err.message });
+        }
+        return null;
+      }
+
+      // ---- BREAKEVEN STAGE ----
+      // Once price moves 1% in our favor, we mentally move SL to breakeven
+      if (state.stage === 'watching' && effectivePct >= STRATEGY.breakevenPct) {
+        logger.info('BREAKEVEN stage reached', {
+          mint, market, priceChange: (effectivePct * 100).toFixed(2) + '%',
+        });
+        updateData.strategyStage = 'breakeven';
+      }
+
+      // If in breakeven stage and price drops back to entry -> close at breakeven
+      if (state.stage === 'breakeven' && effectivePct <= 0 && pnl <= STRATEGY.minProfitUsd) {
+        logger.info('BREAKEVEN EXIT -- price returned to entry', {
+          mint, market, effectivePct: (effectivePct * 100).toFixed(2) + '%',
+        });
+
+        try {
+          const closeResult = await retry(
+            () => perps.closePosition(market, direction),
+            { retries: 2, delayMs: 2000, label: `breakeven(${market})` }
           );
 
           await db.setPosition(mint, {
-            ...position,
-            tokenMint: mint,
+            ...updateData,
             deployedSol: 0,
-            lastAction: 'take-profit',
+            lastAction: 'breakeven-exit',
             lastActionAt: Date.now(),
+            lastCloseAt: Date.now(),
             pnl: 0,
+            strategyStage: 'watching',
+            highWaterPnl: 0,
+            tp1Hit: false,
           });
 
-          logger.info('Take profit executed -- position closed', {
-            mint, market, pnl: pnlInfo.pnl.toFixed(2), txSig: closeResult?.txSig,
-          });
-
-          return { action: 'take-profit', txSig: closeResult?.txSig, pnl: pnlInfo.pnl };
+          return { action: 'breakeven-exit', pnl: 0, txSig: closeResult?.txSig };
         } catch (err) {
-          logger.error('Take profit failed', { mint, market, error: err.message });
+          logger.error('Breakeven exit failed', { mint, error: err.message });
+        }
+        return null;
+      }
+
+      // ---- TAKE PROFIT STAGE 1: Close 50% at +3% ----
+      if (!state.tp1Hit && effectivePct >= STRATEGY.tp1Pct && pnl > STRATEGY.minProfitUsd) {
+        logger.info('TAKE PROFIT STAGE 1 -- closing 50%', {
+          mint, market, pnl: pnl.toFixed(2),
+          priceChange: (effectivePct * 100).toFixed(2) + '%',
+        });
+
+        try {
+          const reduceResult = await retry(
+            () => perps.reducePosition(market, STRATEGY.tp1ReducePct, direction),
+            { retries: 2, delayMs: 2000, label: `tp1(${market})` }
+          );
+
+          const newDeployed = deployedAmount * (1 - STRATEGY.tp1ReducePct);
+
+          await db.setPosition(mint, {
+            ...updateData,
+            deployedSol: newDeployed,
+            lastAction: 'take-profit-50%',
+            lastActionAt: Date.now(),
+            tp1Hit: true,
+            strategyStage: 'trailing',
+            highWaterPrice: currentPrice,
+            highWaterPnl: pnl * (1 - STRATEGY.tp1ReducePct),
+          });
+
+          return { action: 'take-profit-50%', pnl: pnl * STRATEGY.tp1ReducePct, txSig: reduceResult?.txSig };
+        } catch (err) {
+          logger.error('TP1 failed', { mint, error: err.message });
         }
       }
 
-      // Position exists but not profitable enough -- do nothing, let it ride
-      logger.debug('Position active, letting it ride', {
-        mint, market, pnl: (pnlInfo.pnl || 0).toFixed(2),
+      // ---- TRAILING STOP (after TP1) ----
+      if (state.stage === 'trailing' || state.tp1Hit) {
+        // Update high water mark
+        const hwPrice = Math.max(state.highWaterPrice || 0, currentPrice);
+        const hwPnl = Math.max(state.highWaterPnl || 0, pnl);
+
+        // Check if price has pulled back from high by the callback %
+        const pullbackFromHigh = hwPrice > 0 ? (hwPrice - currentPrice) / hwPrice : 0;
+        const effectivePullback = direction === 'short' ? -pullbackFromHigh : pullbackFromHigh;
+
+        if (effectivePullback >= STRATEGY.trailingCallbackPct && pnl > 0) {
+          logger.info('TRAILING STOP triggered', {
+            mint, market,
+            currentPrice: currentPrice.toFixed(2),
+            highWaterPrice: hwPrice.toFixed(2),
+            pullback: (effectivePullback * 100).toFixed(2) + '%',
+            pnl: pnl.toFixed(2),
+          });
+
+          try {
+            const closeResult = await retry(
+              () => perps.closePosition(market, direction),
+              { retries: 2, delayMs: 2000, label: `trailingStop(${market})` }
+            );
+
+            await db.setPosition(mint, {
+              ...updateData,
+              deployedSol: 0,
+              lastAction: 'trailing-stop',
+              lastActionAt: Date.now(),
+              lastCloseAt: Date.now(),
+              pnl: 0,
+              strategyStage: 'watching',
+              highWaterPnl: 0,
+              highWaterPrice: 0,
+              tp1Hit: false,
+            });
+
+            return { action: 'trailing-stop', pnl, txSig: closeResult?.txSig };
+          } catch (err) {
+            logger.error('Trailing stop failed', { mint, error: err.message });
+          }
+        }
+
+        // Update high water marks in DB
+        updateData.highWaterPrice = hwPrice;
+        updateData.highWaterPnl = hwPnl;
+        updateData.strategyStage = 'trailing';
+      }
+
+      // Save updated state
+      await db.setPosition(mint, updateData);
+
+      logger.debug('Position monitored', {
+        mint, market, stage: updateData.strategyStage || state.stage,
+        pnl: pnl.toFixed(2), pnlPct: (pnlPct * 100).toFixed(1) + '%',
+        priceChange: (effectivePct * 100).toFixed(2) + '%',
       });
+
       return null;
     }
 
     // -------------------------------------------------------------------
-    // CASE 2: No position exists -> check if we should open one
+    // CASE 2: No position -> check if we should open one
     // -------------------------------------------------------------------
+    const position = await db.getPosition(mint);
+    const state = await getStrategyState(mint);
+
+    // Cooldown check -- don't re-enter too quickly after a close
+    if (state.lastCloseAt && Date.now() - state.lastCloseAt < STRATEGY.cooldownMs) {
+      logger.debug('Cooldown active, skipping', {
+        mint, remainingMs: STRATEGY.cooldownMs - (Date.now() - state.lastCloseAt),
+      });
+      return null;
+    }
+
+    // Daily loss limit -- stop trading if we've lost too much today
+    const todayStr = new Date().toDateString();
+    const todayLoss = state.dailyLossDate === todayStr ? state.dailyLoss : 0;
+    if (todayLoss <= STRATEGY.dailyLossLimitUsd) {
+      logger.warn('Daily loss limit reached, not opening new positions', {
+        mint, dailyLoss: todayLoss.toFixed(2), limit: STRATEGY.dailyLossLimitUsd,
+      });
+      return null;
+    }
+
     const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
-    const minBalance = config.RISK.minWalletBalanceSol;
-    const available = Math.max(0, walletBalance - minBalance);
+    const available = Math.max(0, walletBalance - config.RISK.minWalletBalanceSol);
 
-    // Need at least 0.5 SOL to open
     if (available < config.RISK.minDeploySol) {
-      logger.debug('Not enough SOL to open position', {
-        mint, available: available.toFixed(4),
-      });
+      logger.debug('Not enough SOL', { mint, available: available.toFixed(4) });
       return null;
     }
 
-    // Check if ANY token already has a position -- only one position at a time
+    // Only one position at a time
     const allPositions = await db.getAllPositions();
-    const hasActivePosition = allPositions.some(p => (p.deployedSol || 0) > 0);
-    if (hasActivePosition) {
-      logger.debug('Another token already has a position, skipping', { mint });
-      return null;
-    }
+    const hasActive = allPositions.some(p => (p.deployedSol || 0) > 0);
+    if (hasActive) return null;
 
-    // Open position with target leverage
+    // Use the token's configured leverage
     const solPrice = await getSolPrice();
     if (solPrice <= 0) return null;
 
-    // Use the token's configured leverage (matches the derivative coin)
+    const deployAmount = available;
+    const collateralUsd = deployAmount * solPrice;
     const leverage = token.leverage || config.RISK.leverage || 100;
     const maxLev = perps.getMaxLeverage(market);
     const effectiveLeverage = Math.min(leverage, maxLev);
-
-    const deployAmount = available;
-    const collateralUsd = deployAmount * solPrice;
     const sizeUsd = collateralUsd * effectiveLeverage;
 
-    if (sizeUsd < 100) {
-      logger.debug('Position too small', { mint, sizeUsd: sizeUsd.toFixed(2) });
-      return null;
-    }
-
-    const direction = token.side || 'long';
+    if (sizeUsd < 100) return null;
 
     logger.info('Opening position', {
       mint, market, direction,
@@ -163,9 +371,15 @@ export async function managePositionForToken(mint) {
       lastActionAt: Date.now(),
       entry: 0,
       pnl: 0,
+      strategyStage: 'watching',
+      highWaterPnl: 0,
+      highWaterPrice: 0,
+      tp1Hit: false,
+      dailyLoss: todayLoss,
+      dailyLossDate: todayStr,
     });
 
-    logger.info('Position opened', { mint, market, direction, txSig: result.txSig });
+    logger.info('Position opened', { mint, market, direction, leverage: effectiveLeverage + 'x', txSig: result.txSig });
     return { action: 'open', txSig: result.txSig, deployedSol: deployAmount };
   } catch (err) {
     logger.error('Position management failed', { mint, error: err.message });
@@ -175,16 +389,11 @@ export async function managePositionForToken(mint) {
 
 /**
  * Run position management for ALL active tokens.
- * In practice, only one token opens/manages the shared position.
  */
 export async function manageAllPositions() {
   const tokens = await getAllTokens();
   const active = tokens.filter((t) => t.status === 'active');
-
-  if (active.length === 0) {
-    logger.info('No active tokens for position management');
-    return [];
-  }
+  if (active.length === 0) return [];
 
   const results = [];
   for (const token of active) {
@@ -192,13 +401,13 @@ export async function manageAllPositions() {
     if (result) results.push({ mint: token.id || token.mint, ...result });
   }
 
-  logger.info(`Position management cycle complete: ${results.length}/${active.length}`);
+  logger.info(`Position management cycle: ${results.length}/${active.length}`);
   return results;
 }
 
 /**
- * Fast profit check for ALL active tokens.
- * Only checks PnL and takes profits. Does NOT open new positions.
+ * Fast PnL check -- called more frequently than full management.
+ * Only checks stop loss and trailing stop. Does NOT open positions.
  */
 export async function checkProfitsAllTokens() {
   const tokens = await getAllTokens();
@@ -212,45 +421,16 @@ export async function checkProfitsAllTokens() {
       const market = token.underlying?.toUpperCase();
       if (!market) continue;
 
-      const pnlInfo = await perps.getPositionPnl(market);
-      if (!pnlInfo.exists) continue;
-
       const position = await db.getPosition(mint);
       if (!position || (position.deployedSol || 0) <= 0) continue;
 
-      // Update PnL
-      await db.setPosition(mint, {
-        ...position,
-        pnl: pnlInfo.pnl || 0,
-        entry: pnlInfo.entry || position.entry,
-        updatedAt: Date.now(),
-      });
+      // Quick PnL check
+      const pnlInfo = await perps.getPositionPnl(market);
+      if (!pnlInfo.exists) continue;
 
-      // Take profit if big enough
-      if (pnlInfo.pnl >= MIN_PROFIT_TO_TAKE) {
-        logger.info('FAST TAKE PROFIT triggered', {
-          mint, market, pnl: pnlInfo.pnl.toFixed(2),
-        });
-
-        try {
-          const closeResult = await retry(
-            () => perps.closePosition(market, token.side || 'long'),
-            { retries: 2, delayMs: 2000, label: `fastTP(${market})` }
-          );
-
-          await db.setPosition(mint, {
-            ...position,
-            deployedSol: 0,
-            lastAction: 'fast-take-profit',
-            lastActionAt: Date.now(),
-            pnl: 0,
-          });
-
-          results.push({ mint, action: 'fast-take-profit', pnl: pnlInfo.pnl, txSig: closeResult?.txSig });
-        } catch (err) {
-          logger.error('Fast take profit failed', { mint, error: err.message });
-        }
-      }
+      // Run full strategy logic (handles SL, breakeven, TP, trailing)
+      const result = await managePositionForToken(mint);
+      if (result) results.push(result);
     } catch (err) {
       logger.debug('Profit check error', { mint, error: err.message });
     }
