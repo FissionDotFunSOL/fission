@@ -29,15 +29,8 @@ app.use(express.json());
 // Trust proxy (Railway / Vercel sit behind load balancers)
 app.set('trust proxy', 1);
 
-// Rate limiting
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 2000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, try again later' },
-  validate: { trustProxy: false, xForwardedForHeader: false },
-});
+// Rate limiting disabled — Vercel proxy shares a single IP for all users
+// const apiLimiter = rateLimit({ ... });
 
 const registerLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -59,7 +52,7 @@ app.use((req, _res, next) => {
 
 // Mount API routes with rate limiting
 app.use('/api/v1/tokens/register', registerLimiter);
-app.use('/api/v1', apiLimiter, routes);
+app.use('/api/v1', routes);
 
 // 404 catch-all
 app.use((_req, res) => {
