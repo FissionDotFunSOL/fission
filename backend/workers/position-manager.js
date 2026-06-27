@@ -259,7 +259,7 @@ export async function managePositionForToken(mint) {
     const sizeUsd = collateralUsd * effectiveLeverage;
 
     // Token can be configured as long or short
-    const direction = token.side || 'long';
+    // direction already declared above
 
     logger.info('Opening/adding to position', {
       mint,
