@@ -305,10 +305,9 @@ export async function getMarketSignal() {
     // === Leverage scaling based on score ===
     let leverage;
     if (confidence >= 80) leverage = 100;
-    else if (confidence >= 60) leverage = 70;
-    else if (confidence >= 40) leverage = 50;
-    else if (confidence >= 20) leverage = 30;
-    else leverage = 20;
+    else if (confidence >= 60) leverage = 80;
+    else if (confidence >= 40) leverage = 60;
+    else leverage = 50;  // minimum 50x -- no point going lower in degen mode
 
     const session = getSession();
 
@@ -354,7 +353,7 @@ export async function shouldEnterNow() {
   // Marginal positive: 40% chance to enter (degen mode, don't sit out forever)
   if (signal.score > 0 && signal.score < 25) {
     if (Math.random() < 0.4) {
-      return { enter: true, signal: { ...signal, leverage: Math.min(signal.leverage, 30), note: 'marginal-entry' } };
+      return { enter: true, signal: { ...signal, leverage: 50, note: 'marginal-entry' } };
     }
   }
 

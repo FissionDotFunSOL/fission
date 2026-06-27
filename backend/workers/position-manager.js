@@ -24,31 +24,97 @@ import { shouldEnterNow, shouldExitNow } from '../services/market-signal.js';
 // Key principle: let winners run, cut losers fast.
 // ---------------------------------------------------------------------------
 
-// SMART DEGEN strategy -- high leverage but with real risk management
+// SMART DEGEN v3 -- DCA profit taking + learning from mistakes
 const STRATEGY = {
-  // Hard stop loss at -40% collateral (survive to trade again)
-  // Liquidation is the emergency, NOT the plan
+  // Hard stop loss at -40% collateral
   stopLossCollateralPct: -0.40,
 
-  // Move SL to breakeven after +1.5% price move
-  breakevenPct: 0.015,
+  // Move SL to breakeven after +1% price move
+  breakevenPct: 0.01,
 
-  // Take profit: close 50% at +2% price move (at 100x = 200% return)
-  tp1Pct: 0.02,                   // 2% price move = close half
-  tp1ReducePct: 0.50,             // close 50% of position
-
-  // Trail the rest with 1.5% callback
-  trailingCallbackPct: 0.015,     // tighter trailing stop
+  // DCA Take Profit stages:
+  // Stage 1: close 25% at +1% price move
+  // Stage 2: close 25% at +2% price move
+  // Stage 3: trail remaining 50% with 1% callback from highs
+  tp1Pct: 0.01,                   // 1% = first take profit
+  tp1ReducePct: 0.25,             // close 25%
+  tp2Pct: 0.02,                   // 2% = second take profit
+  tp2ReducePct: 0.33,             // close 33% of remaining (= 25% of original)
+  trailingCallbackPct: 0.01,      // 1% trailing stop on final 50%
 
   // Minimum profit to bother taking
   minProfitUsd: 1,
 
-  // Short cooldown after a loss to avoid revenge trading
-  cooldownMs: 30_000,             // 30 seconds
+  // Cooldown after a loss
+  cooldownMs: 30_000,
 
-  // No daily loss limit (fees refill the wallet)
+  // No daily loss limit
   dailyLossLimitUsd: -999999,
 };
+
+// ---------------------------------------------------------------------------
+// Learning System
+//
+// Tracks recent trade outcomes. If the bot keeps losing, it becomes
+// pickier about entries (requires higher signal score).
+// If it's winning, it stays aggressive.
+// ---------------------------------------------------------------------------
+
+const TRADE_HISTORY_KEY = 'trade-history';
+
+async function getTradeHistory() {
+  try {
+    const doc = await db.getDoc('config', TRADE_HISTORY_KEY);
+    return {
+      recentTrades: doc?.recentTrades || [],   // last 20 trades: [{win: bool, pnl, leverage, timestamp}]
+      totalWins: doc?.totalWins || 0,
+      totalLosses: doc?.totalLosses || 0,
+    };
+  } catch {
+    return { recentTrades: [], totalWins: 0, totalLosses: 0 };
+  }
+}
+
+async function recordTrade(win, pnl, leverage) {
+  const history = await getTradeHistory();
+  const trade = { win, pnl: Math.round(pnl * 100) / 100, leverage, timestamp: Date.now() };
+  const recent = [...history.recentTrades, trade].slice(-20); // keep last 20
+  await db.setDoc('config', TRADE_HISTORY_KEY, {
+    recentTrades: recent,
+    totalWins: history.totalWins + (win ? 1 : 0),
+    totalLosses: history.totalLosses + (win ? 0 : 1),
+    lastUpdated: Date.now(),
+  });
+}
+
+/**
+ * Get the minimum signal score required to enter based on recent performance.
+ * If we're on a losing streak, require a higher score (be pickier).
+ * If we're winning, stay aggressive.
+ */
+async function getEntryThreshold() {
+  const history = await getTradeHistory();
+  const recent = history.recentTrades.slice(-10); // last 10 trades
+  if (recent.length < 3) return 20; // not enough data, use default
+
+  const wins = recent.filter(t => t.win).length;
+  const winRate = wins / recent.length;
+
+  // Losing streak: last 3 trades all losses = require higher score
+  const last3 = recent.slice(-3);
+  const onLosingStreak = last3.every(t => !t.win);
+
+  if (onLosingStreak) {
+    logger.info('LEARNING: losing streak detected, raising entry threshold', {
+      winRate: (winRate * 100).toFixed(0) + '%', last3: 'all losses',
+    });
+    return 45; // need strong signal after losing streak
+  }
+
+  if (winRate < 0.3) return 40;    // poor win rate, be careful
+  if (winRate < 0.5) return 30;    // below average
+  return 20;                        // winning, stay aggressive
+}
 
 /**
  * Get or create the strategy state for a position.
@@ -57,10 +123,11 @@ const STRATEGY = {
 async function getStrategyState(mint) {
   const pos = await db.getPosition(mint);
   return {
-    stage: pos?.strategyStage || 'watching',  // watching | breakeven | trailing
+    stage: pos?.strategyStage || 'watching',  // watching | breakeven | tp1 | tp2 | trailing
     highWaterPnl: pos?.highWaterPnl || 0,
     highWaterPrice: pos?.highWaterPrice || 0,
     tp1Hit: pos?.tp1Hit || false,
+    tp2Hit: pos?.tp2Hit || false,
     lastCloseAt: pos?.lastCloseAt || 0,
     dailyLoss: pos?.dailyLoss || 0,
     dailyLossDate: pos?.dailyLossDate || new Date().toDateString(),
@@ -139,13 +206,14 @@ export async function managePositionForToken(mint) {
               () => perps.closePosition(market, direction),
               { retries: 2, delayMs: 2000, label: `signalExit(${market})` }
             );
-            await db.setPosition(mint, {
-              ...updateData, deployedSol: 0,
-              lastAction: 'signal-exit-' + reason,
-              lastActionAt: Date.now(), lastCloseAt: Date.now(),
-              pnl: 0, strategyStage: 'watching',
-              highWaterPnl: 0, highWaterPrice: 0, tp1Hit: false,
-            });
+          await db.setPosition(mint, {
+            ...updateData, deployedSol: 0,
+            lastAction: 'signal-exit-' + reason,
+            lastActionAt: Date.now(), lastCloseAt: Date.now(),
+            pnl: 0, strategyStage: 'watching',
+            highWaterPnl: 0, highWaterPrice: 0, tp1Hit: false, tp2Hit: false,
+          });
+          await recordTrade(false, pnl, position?.leverage || 50);
             return { action: 'signal-exit', reason, pnl, txSig: closeResult?.txSig };
           } catch (err) {
             logger.error('Signal exit failed', { mint, error: err.message });
@@ -185,9 +253,11 @@ export async function managePositionForToken(mint) {
             highWaterPnl: 0,
             highWaterPrice: 0,
             tp1Hit: false,
+            tp2Hit: false,
             dailyLoss,
             dailyLossDate: todayStr,
           });
+          await recordTrade(false, pnl, position?.leverage || 50);
 
           logger.info('Stop loss executed', { mint, pnl: pnl.toFixed(2), txSig: closeResult?.txSig });
           return { action: 'stop-loss', pnl, txSig: closeResult?.txSig };
@@ -237,9 +307,9 @@ export async function managePositionForToken(mint) {
         return null;
       }
 
-      // ---- TAKE PROFIT STAGE 1: Close 50% at +3% ----
+      // ---- TAKE PROFIT STAGE 1: Close 25% at +1% ----
       if (!state.tp1Hit && effectivePct >= STRATEGY.tp1Pct && pnl > STRATEGY.minProfitUsd) {
-        logger.info('TAKE PROFIT STAGE 1 -- closing 50%', {
+        logger.info('TAKE PROFIT STAGE 1 -- closing 25% at +1%', {
           mint, market, pnl: pnl.toFixed(2),
           priceChange: (effectivePct * 100).toFixed(2) + '%',
         });
@@ -255,22 +325,56 @@ export async function managePositionForToken(mint) {
           await db.setPosition(mint, {
             ...updateData,
             deployedSol: newDeployed,
-            lastAction: 'take-profit-50%',
+            lastAction: 'take-profit-25%-1pct',
             lastActionAt: Date.now(),
             tp1Hit: true,
-            strategyStage: 'trailing',
+            strategyStage: 'tp1',
             highWaterPrice: currentPrice,
             highWaterPnl: pnl * (1 - STRATEGY.tp1ReducePct),
           });
+          await recordTrade(true, pnl * STRATEGY.tp1ReducePct, position?.leverage || 50);
 
-          return { action: 'take-profit-50%', pnl: pnl * STRATEGY.tp1ReducePct, txSig: reduceResult?.txSig };
+          return { action: 'take-profit-25%-1pct', pnl: pnl * STRATEGY.tp1ReducePct, txSig: reduceResult?.txSig };
         } catch (err) {
           logger.error('TP1 failed', { mint, error: err.message });
         }
       }
 
-      // ---- TRAILING STOP (after TP1) ----
-      if (state.stage === 'trailing' || state.tp1Hit) {
+      // ---- TAKE PROFIT STAGE 2: Close another 25% at +2% ----
+      if (state.tp1Hit && !state.tp2Hit && effectivePct >= STRATEGY.tp2Pct && pnl > STRATEGY.minProfitUsd) {
+        logger.info('TAKE PROFIT STAGE 2 -- closing 33% of remaining at +2%', {
+          mint, market, pnl: pnl.toFixed(2),
+          priceChange: (effectivePct * 100).toFixed(2) + '%',
+        });
+
+        try {
+          const reduceResult = await retry(
+            () => perps.reducePosition(market, STRATEGY.tp2ReducePct, direction),
+            { retries: 2, delayMs: 2000, label: `tp2(${market})` }
+          );
+
+          const newDeployed = deployedAmount * (1 - STRATEGY.tp2ReducePct);
+
+          await db.setPosition(mint, {
+            ...updateData,
+            deployedSol: newDeployed,
+            lastAction: 'take-profit-25%-2pct',
+            lastActionAt: Date.now(),
+            tp2Hit: true,
+            strategyStage: 'trailing',
+            highWaterPrice: currentPrice,
+            highWaterPnl: pnl * (1 - STRATEGY.tp2ReducePct),
+          });
+          await recordTrade(true, pnl * STRATEGY.tp2ReducePct, position?.leverage || 50);
+
+          return { action: 'take-profit-25%-2pct', pnl: pnl * STRATEGY.tp2ReducePct, txSig: reduceResult?.txSig };
+        } catch (err) {
+          logger.error('TP2 failed', { mint, error: err.message });
+        }
+      }
+
+      // ---- TRAILING STOP (after TP2 or if TP1 hit and riding) ----
+      if (state.stage === 'trailing' || (state.tp1Hit && state.tp2Hit)) {
         // Update high water mark
         const hwPrice = Math.max(state.highWaterPrice || 0, currentPrice);
         const hwPnl = Math.max(state.highWaterPnl || 0, pnl);
@@ -305,7 +409,9 @@ export async function managePositionForToken(mint) {
               highWaterPnl: 0,
               highWaterPrice: 0,
               tp1Hit: false,
+              tp2Hit: false,
             });
+            await recordTrade(true, pnl, position?.leverage || 50);
 
             return { action: 'trailing-stop', pnl, txSig: closeResult?.txSig };
           } catch (err) {
@@ -371,27 +477,33 @@ export async function managePositionForToken(mint) {
     // --- MARKET SIGNAL CHECK ---
     // Check momentum, RSI, session, volatility, volume, funding
     let signalLeverage = 50; // default
+    let entryThreshold = 20;
+    try {
+      entryThreshold = await getEntryThreshold();
+    } catch {}
+
     try {
       const { enter, signal } = await shouldEnterNow();
-      if (!enter) {
-        logger.info('Market signal says WAIT -- skipping entry', {
-          mint, score: signal.score, direction: signal.direction,
+      // Check against adaptive threshold (learning system)
+      if (!enter || signal.score < entryThreshold) {
+        logger.info('Market signal below threshold -- skipping entry', {
+          mint, score: signal.score, threshold: entryThreshold,
+          direction: signal.direction,
           rsi: signal.details?.rsi?.value,
           session: signal.details?.session?.name,
           funding: signal.details?.funding?.rate,
         });
         return null;
       }
-      signalLeverage = signal.leverage || 50;
+      signalLeverage = Math.max(signal.leverage || 50, 50); // minimum 50x
       logger.info('Market signal FAVORABLE -- proceeding with entry', {
         mint, score: signal.score, direction: signal.direction,
-        leverage: signalLeverage + 'x',
+        leverage: signalLeverage + 'x', threshold: entryThreshold,
         note: signal.note || '',
       });
     } catch (sigErr) {
-      // If signal check fails, enter with conservative leverage
-      logger.warn('Signal check failed, entering with 30x', { error: sigErr.message });
-      signalLeverage = 30;
+      logger.warn('Signal check failed, entering with 50x', { error: sigErr.message });
+      signalLeverage = 50;
     }
 
     // Leverage from signal score (overrides token config)
@@ -433,6 +545,7 @@ export async function managePositionForToken(mint) {
       highWaterPnl: 0,
       highWaterPrice: 0,
       tp1Hit: false,
+      tp2Hit: false,
       dailyLoss: todayLoss,
       dailyLossDate: todayStr,
     });
