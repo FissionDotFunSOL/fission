@@ -23,31 +23,29 @@ import { retry } from '../utils/helpers.js';
 // Key principle: let winners run, cut losers fast.
 // ---------------------------------------------------------------------------
 
-// Strategy parameters (tuned for high-leverage SOL perps)
+// DEGEN MODE strategy parameters -- no limits, ride or die
 const STRATEGY = {
-  // Stop loss: close at this % loss of collateral to avoid liquidation
-  // At 100x, 1% price drop = 100% loss. We exit at 0.4% adverse move
-  // to preserve capital. At 250x, exit at 0.15% adverse.
-  stopLossCollateralPct: -0.40,   // -40% of collateral value
+  // No stop loss -- ride it to liquidation or profit
+  stopLossCollateralPct: -0.99,   // only exit at 99% loss (basically never)
 
-  // Breakeven: move mental SL to entry once this profit % is hit
-  breakevenPct: 0.01,             // 1% price move in our favor
+  // No breakeven exit -- let it breathe
+  breakevenPct: 999,              // effectively disabled
 
-  // Take profit stage 1: close 50% at this gain
-  tp1Pct: 0.03,                   // 3% price move = close half
+  // Take profit: close 50% at +5% price move (big wins only)
+  tp1Pct: 0.05,                   // 5% price move = close half
   tp1ReducePct: 0.50,             // close 50% of position
 
-  // Take profit stage 2: trail the rest with this callback
-  trailingCallbackPct: 0.015,     // 1.5% trailing stop on remainder
+  // Trail the rest with wide callback so it doesn't get stopped out early
+  trailingCallbackPct: 0.03,      // 3% trailing stop on remainder
 
-  // Minimum profit to bother taking (avoid dust)
-  minProfitUsd: 5,
+  // Minimum profit to bother taking
+  minProfitUsd: 1,
 
-  // Cooldown: don't re-enter for this many ms after a close
-  cooldownMs: 5 * 60 * 1000,     // 5 minutes
+  // No cooldown -- re-enter immediately
+  cooldownMs: 0,
 
-  // Daily loss limit: stop trading if total losses exceed this
-  dailyLossLimitUsd: -500,
+  // No daily loss limit
+  dailyLossLimitUsd: -999999,
 };
 
 /**
