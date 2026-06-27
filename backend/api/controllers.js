@@ -257,11 +257,11 @@ export async function listPositions(_req, res) {
   try {
     const positions = await db.getAllPositions();
 
-    // Enrich with live on-chain PnL data
+    // Enrich with live on-chain PnL data + status
     const perps = await import('../services/perps-router.js');
     const enriched = await Promise.all(positions.map(async (pos) => {
       try {
-        if (!pos.market) return pos;
+        if (!pos.market) return { ...pos, status: 'no-market', statusText: 'No market assigned' };
         const pnlInfo = await perps.getPositionPnl(pos.market, pos.side || 'long');
         if (pnlInfo.exists) {
           return {
@@ -272,11 +272,19 @@ export async function listPositions(_req, res) {
             pnl: pnlInfo.pnl || 0,
             side: pnlInfo.side || pos.side,
             positionExists: true,
+            status: 'active',
+            statusText: 'Position active',
           };
         }
-        return { ...pos, positionExists: false };
+        // Position doesn't exist on-chain
+        const deployed = pos.deployedSol || 0;
+        let statusText = 'Collecting fees';
+        if (deployed > 0) statusText = 'Liquidated - awaiting re-entry';
+        else if (pos.lastAction === 'liquidated-detected' || pos.riskAlert === 'position-missing') statusText = 'Liquidated - awaiting re-entry';
+        else if (pos.lastAction === 'circuit-breaker-close') statusText = 'Paused - circuit breaker';
+        return { ...pos, positionExists: false, status: deployed > 0 ? 'liquidated' : 'collecting', statusText };
       } catch {
-        return pos;
+        return { ...pos, status: 'error', statusText: 'RPC error' };
       }
     }));
 
@@ -361,8 +369,32 @@ export async function getStats(_req, res) {
     const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0) + feesOffset;
     const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0) + buybackSolOffset;
     const totalBurned      = buybacks.reduce((sum, b) => sum + (b.tokensBurned || 0), 0);
-    const totalPnl         = positions.reduce((sum, p) => sum + (p.pnl || 0), 0) + pnlOffset;
     const totalBuybacks    = buybacks.length + buybackCountOffset;
+
+    // Get live PnL from Jupiter Perps API instead of stale DB
+    let livePnl = 0;
+    let hasLivePosition = false;
+    try {
+      const walletAddress = config.PROTOCOL_PUBKEY.toBase58();
+      const jupResp = await fetch(`https://perps-api.jup.ag/v1/positions?walletAddress=${walletAddress}`);
+      if (jupResp.ok) {
+        const jupData = await jupResp.json();
+        for (const p of (jupData.dataList || [])) {
+          livePnl += parseFloat(p.pnlAfterFeesUsd) || 0;
+          hasLivePosition = true;
+        }
+      }
+    } catch {}
+
+    // Use live PnL if available, otherwise fall back to DB
+    const totalPnl = hasLivePosition ? livePnl : (positions.reduce((sum, p) => sum + (p.pnl || 0), 0) + pnlOffset);
+
+    // Get wallet SOL balance for display
+    let walletBalance = 0;
+    try {
+      const { getSolBalance } = await import('../services/solana.js');
+      walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    } catch {}
 
     res.json({
       stats: {
@@ -375,6 +407,8 @@ export async function getStats(_req, res) {
         totalBuybackSol,
         totalBurned,
         totalBuybacks,
+        walletBalanceSol: Math.round(walletBalance * 10000) / 10000,
+        hasLivePosition,
         uptime: process.uptime(),
       },
     });

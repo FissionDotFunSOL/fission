@@ -71,7 +71,7 @@ async function fetchStats() {
       return [
         { key: 'derivatives', value: statsJson.stats.activeTokens || statsJson.stats.totalTokens || 0, decimals: 0 },
         { key: 'fees',        value: statsJson.stats.totalFeesClaimed || 0, decimals: 2 },
-        { key: 'pnl',         value: Math.abs(statsJson.stats.totalPnl || 0), decimals: 2 },
+        { key: 'pnl',         value: statsJson.stats.totalPnl || 0, decimals: 2 },
         { key: 'buybacks',    value: buybackCount || (statsJson.stats.totalBuybacks || 0), decimals: 0 },
         { key: 'totalBurned', value: totalBurned, decimals: 0 },
         { key: 'totalBurnedSol', value: Math.round(totalBurnedSol * 10000) / 10000, decimals: 4 },

@@ -71,11 +71,23 @@ async function fetchData() {
       const mint = t.mint || t.id;
       const pos = positions.find(p => p.tokenMint === mint || p.id === mint) || {};
 
+      // Determine status reason
+      let statusText = 'Collecting fees';
+      if (pos.positionExists) {
+        statusText = 'Position active';
+      } else if (pos.statusText) {
+        statusText = pos.statusText;
+      } else if (pos.lastAction === 'liquidated-detected' || pos.riskAlert === 'position-missing') {
+        statusText = 'Liquidated - awaiting re-entry';
+      } else if ((pos.deployedSol || 0) === 0 && !pos.entry) {
+        statusText = 'Collecting fees';
+      }
+
       return {
         mint,
         token: t.name || t.symbol || t.token || mint?.slice(0, 8) || 'UNKNOWN',
         symbol: t.symbol || '',
-        underlying: t.underlying || t.linkedTo || '—',
+        underlying: t.underlying || t.linkedTo || '--',
         side: (t.side || pos.side || 'long').toLowerCase(),
         leverage: t.leverage || pos.leverage || 100,
         entry: pos.entry || 0,
@@ -83,9 +95,11 @@ async function fetchData() {
         collateralUsd: pos.collateralUsd || 0,
         deployedSol: pos.deployedSol || 0,
         pnl: pos.pnl || 0,
-        market: t.perpsMarket || pos.market || t.underlying || '—',
+        market: t.perpsMarket || pos.market || t.underlying || '--',
         status: t.status || 'active',
-        lastAction: pos.lastAction || '—',
+        positionStatus: pos.status || 'collecting',
+        statusText,
+        lastAction: pos.lastAction || '--',
         lastActionAt: pos.lastActionAt || 0,
         image: t.image || null,
       };
@@ -172,13 +186,29 @@ function renderTable() {
     const dirArrow = isLong ? '▲' : '▼';
     const dirColor = isLong ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
     const dirText = isLong ? 'LONG' : 'SHORT';
+    const hasPosition = row.entry > 0 || row.sizeUsd > 0;
     const pnlColor = row.pnl >= 0 ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
     const pnlSign = row.pnl >= 0 ? '+' : '';
+
+    // Status dot color
+    let dotColor = '#f59e0b'; // amber = collecting
+    if (hasPosition) dotColor = '#4ade80'; // green = active
+    if (row.statusText?.includes('Liquidated')) dotColor = '#f87171'; // red
+
+    // Status text for non-active positions
+    const statusCell = hasPosition
+      ? `<td style="color:${pnlColor};font-family:var(--font-mono);">
+          ${pnlSign}${formatCurrency(row.pnl)}
+        </td>
+        <td style="font-family:var(--font-mono);">${formatCurrency(row.sizeUsd)}</td>`
+      : `<td colspan="2" style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.7rem;font-style:italic;">
+          ${row.statusText || 'Collecting fees'}
+        </td>`;
 
     return `
     <tr class="dashboard-row" data-token="${row.mint}" style="cursor:pointer;">
       <td>
-        <span class="dashboard-live-dot"></span>
+        <span class="dashboard-live-dot" style="background:${dotColor};box-shadow:0 0 6px ${dotColor};"></span>
         <span class="token-name">${row.token}</span>
       </td>
       <td class="token-linked">${row.underlying}</td>
@@ -186,11 +216,8 @@ function renderTable() {
         ${dirArrow} ${dirText}
       </td>
       <td style="font-family:var(--font-mono);color:var(--accent);">${row.leverage}x</td>
-      <td style="font-family:var(--font-mono);">${row.entry > 0 ? '$' + formatNumber(row.entry) : '—'}</td>
-      <td style="color:${pnlColor};font-family:var(--font-mono);">
-        ${row.entry > 0 || row.sizeUsd > 0 ? pnlSign + formatCurrency(row.pnl) : '—'}
-      </td>
-      <td style="font-family:var(--font-mono);">${row.sizeUsd > 0 ? formatCurrency(row.sizeUsd) : '—'}</td>
+      <td style="font-family:var(--font-mono);">${hasPosition ? '$' + formatNumber(row.entry) : '--'}</td>
+      ${statusCell}
     </tr>`;
   }).join('');
 
