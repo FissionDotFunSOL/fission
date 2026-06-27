@@ -71,11 +71,10 @@ export async function managePositionForToken(mint) {
     const minBalance = config.RISK.minWalletBalanceSol;
     const totalAvailable = Math.max(0, walletBalance - minBalance);
 
-    // Divide available SOL among active tokens that need deployment
-    const allTokens = await db.getAllTokens();
-    const activeCount = allTokens.filter(t => t.status === 'active').length || 1;
-    const perTokenMax = totalAvailable / activeCount;
-    const availableToDeploy = Math.max(0, perTokenMax - deployedAmount);
+    // All tokens share the same on-chain SOL perp position.
+    // Deploy the full available balance to the position -- no need to split
+    // across tokens since there's only one on-chain position per market.
+    const availableToDeploy = Math.max(0, totalAvailable - deployedAmount);
 
     // Check current on-chain position PnL (with retry for RPC reliability)
     const pnlInfo = await retry(
