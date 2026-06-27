@@ -398,6 +398,8 @@ export async function getStats(_req, res) {
       }
     } catch {}
 
+    const totalBuybackSol = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0);
+
     res.json({
       stats: {
         totalTokens: tokens.length,
@@ -410,6 +412,7 @@ export async function getStats(_req, res) {
         walletBalanceSol: Math.round(walletBalance * 10000) / 10000,
         hasLivePosition,
         livePositionPnlUsd: Math.round(livePositionPnlUsd * 100) / 100,
+        totalBuybackSol: Math.round(totalBuybackSol * 100) / 100,
         totalBuybacks: buybacks.length,
         uptime: process.uptime(),
       },

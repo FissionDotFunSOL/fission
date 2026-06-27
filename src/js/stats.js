@@ -68,8 +68,8 @@ async function fetchStats() {
         { key: 'fees',           value: s.totalFeesClaimed || 0, decimals: 2 },
         { key: 'pnl',            value: pnl, decimals: 2 },
         { key: 'walletBalance',  value: s.walletBalanceSol || 0, decimals: 4 },
-        { key: 'perpDeployed',   value: s.perpSolDeployed || 0, decimals: 2 },
-        { key: 'perpReturned',   value: s.perpSolReturned || 0, decimals: 2 },
+        { key: 'buybackSol',     value: s.totalBuybackSol || 0, decimals: 2 },
+        { key: 'buybacks',       value: s.totalBuybacks || 0, decimals: 0 },
       ];
     }
 
