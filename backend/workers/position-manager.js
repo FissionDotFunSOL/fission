@@ -6,7 +6,7 @@ import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { getSolBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
-import { shouldEnterNow, getMarketSignal } from '../services/market-signal.js';
+import { shouldEnterNow, shouldExitNow } from '../services/market-signal.js';
 
 // ---------------------------------------------------------------------------
 // High-Leverage Scalping Strategy
@@ -24,28 +24,29 @@ import { shouldEnterNow, getMarketSignal } from '../services/market-signal.js';
 // Key principle: let winners run, cut losers fast.
 // ---------------------------------------------------------------------------
 
-// DEGEN MODE strategy parameters -- no limits, ride or die
+// SMART DEGEN strategy -- high leverage but with real risk management
 const STRATEGY = {
-  // No stop loss -- ride it to liquidation or profit
-  stopLossCollateralPct: -0.99,   // only exit at 99% loss (basically never)
+  // Hard stop loss at -40% collateral (survive to trade again)
+  // Liquidation is the emergency, NOT the plan
+  stopLossCollateralPct: -0.40,
 
-  // No breakeven exit -- let it breathe
-  breakevenPct: 999,              // effectively disabled
+  // Move SL to breakeven after +1.5% price move
+  breakevenPct: 0.015,
 
-  // Take profit: close 50% at +5% price move (big wins only)
-  tp1Pct: 0.05,                   // 5% price move = close half
+  // Take profit: close 50% at +2% price move (at 100x = 200% return)
+  tp1Pct: 0.02,                   // 2% price move = close half
   tp1ReducePct: 0.50,             // close 50% of position
 
-  // Trail the rest with wide callback so it doesn't get stopped out early
-  trailingCallbackPct: 0.03,      // 3% trailing stop on remainder
+  // Trail the rest with 1.5% callback
+  trailingCallbackPct: 0.015,     // tighter trailing stop
 
   // Minimum profit to bother taking
   minProfitUsd: 1,
 
-  // No cooldown -- re-enter immediately
-  cooldownMs: 0,
+  // Short cooldown after a loss to avoid revenge trading
+  cooldownMs: 30_000,             // 30 seconds
 
-  // No daily loss limit
+  // No daily loss limit (fees refill the wallet)
   dailyLossLimitUsd: -999999,
 };
 
@@ -121,8 +122,41 @@ export async function managePositionForToken(mint) {
         updatedAt: Date.now(),
       };
 
+      // ---- SIGNAL-BASED EXIT ----
+      // If momentum has flipped against us, exit early before SL
+      try {
+        const { shouldExit, reason } = await shouldExitNow(direction);
+        if (shouldExit && pnlPct < -0.10) {
+          // Only signal-exit if we're already losing (>10% down)
+          // Don't exit a winning position just because signal flipped
+          logger.info('SIGNAL EXIT -- momentum reversed while losing', {
+            mint, market, reason, pnl: pnl.toFixed(2),
+            pnlPct: (pnlPct * 100).toFixed(1) + '%',
+          });
+
+          try {
+            const closeResult = await retry(
+              () => perps.closePosition(market, direction),
+              { retries: 2, delayMs: 2000, label: `signalExit(${market})` }
+            );
+            await db.setPosition(mint, {
+              ...updateData, deployedSol: 0,
+              lastAction: 'signal-exit-' + reason,
+              lastActionAt: Date.now(), lastCloseAt: Date.now(),
+              pnl: 0, strategyStage: 'watching',
+              highWaterPnl: 0, highWaterPrice: 0, tp1Hit: false,
+            });
+            return { action: 'signal-exit', reason, pnl, txSig: closeResult?.txSig };
+          } catch (err) {
+            logger.error('Signal exit failed', { mint, error: err.message });
+          }
+        }
+      } catch (sigErr) {
+        logger.debug('Signal exit check failed', { error: sigErr.message });
+      }
+
       // ---- HARD STOP LOSS ----
-      // Exit before liquidation. This is the most important rule.
+      // Exit at -40% collateral. Survive to trade again.
       if (pnlPct <= STRATEGY.stopLossCollateralPct) {
         logger.info('STOP LOSS triggered', {
           mint, market, pnl: pnl.toFixed(2),
@@ -335,7 +369,8 @@ export async function managePositionForToken(mint) {
     if (hasActive) return null;
 
     // --- MARKET SIGNAL CHECK ---
-    // Don't blindly open -- check momentum, RSI, session, volatility
+    // Check momentum, RSI, session, volatility, volume, funding
+    let signalLeverage = 50; // default
     try {
       const { enter, signal } = await shouldEnterNow();
       if (!enter) {
@@ -343,27 +378,30 @@ export async function managePositionForToken(mint) {
           mint, score: signal.score, direction: signal.direction,
           rsi: signal.details?.rsi?.value,
           session: signal.details?.session?.name,
+          funding: signal.details?.funding?.rate,
         });
         return null;
       }
+      signalLeverage = signal.leverage || 50;
       logger.info('Market signal FAVORABLE -- proceeding with entry', {
         mint, score: signal.score, direction: signal.direction,
+        leverage: signalLeverage + 'x',
         note: signal.note || '',
       });
     } catch (sigErr) {
-      // If signal check fails, enter anyway (degen mode)
-      logger.warn('Signal check failed, entering anyway', { error: sigErr.message });
+      // If signal check fails, enter with conservative leverage
+      logger.warn('Signal check failed, entering with 30x', { error: sigErr.message });
+      signalLeverage = 30;
     }
 
-    // Use the token's configured leverage
+    // Leverage from signal score (overrides token config)
     const solPrice = await getSolPrice();
     if (solPrice <= 0) return null;
 
     const deployAmount = available;
     const collateralUsd = deployAmount * solPrice;
-    const leverage = token.leverage || config.RISK.leverage || 100;
     const maxLev = perps.getMaxLeverage(market);
-    const effectiveLeverage = Math.min(leverage, maxLev);
+    const effectiveLeverage = Math.min(signalLeverage, maxLev);
     const sizeUsd = collateralUsd * effectiveLeverage;
 
     if (sizeUsd < 100) return null;

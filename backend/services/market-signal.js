@@ -1,76 +1,87 @@
 import logger from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
-// Market Signal Engine
+// Market Signal Engine v2
 //
-// Analyzes SOL price action to determine optimal entry timing.
-// Uses multiple signals:
-//   1. Momentum (short-term price direction from recent candles)
-//   2. Volatility (ATR-based -- high vol = bigger moves = bigger wins)
-//   3. Session timing (US/Asia/Europe session awareness)
-//   4. RSI (avoid buying at extreme overbought levels)
-//   5. Support/resistance (basic pivot point detection)
+// Analyzes SOL price action + derivatives data for entry/exit timing.
 //
-// Returns a score from -100 (strong short) to +100 (strong long)
-// and a recommendation: 'long', 'short', or 'wait'
+// Signals:
+//   1. Momentum (EMA crossovers on 1m candles)
+//   2. RSI (context-aware: overbought only bearish if HTF trend is weak)
+//   3. MACD (trend confirmation)
+//   4. Higher timeframe trend (15m + 1H EMA)
+//   5. Volatility (ATR-based)
+//   6. Session timing (US/Europe/Asia)
+//   7. Volume confirmation (high volume validates moves)
+//   8. Funding rate (avoid overcrowded longs)
+//   9. Recent price action
+//
+// Returns a score from -100 to +100 and recommended leverage.
 // ---------------------------------------------------------------------------
 
-const BINANCE_KLINES = 'https://api.binance.com/api/v3/klines';
+const BINANCE_API = 'https://api.binance.com/api/v3';
+const BINANCE_FAPI = 'https://fapi.binance.com/fapi/v1';
 
-// Cache candle data so we don't spam the API
-let candleCache = { data: null, fetchedAt: 0 };
-const CACHE_TTL_MS = 30_000; // 30 seconds
+// Caches
+let cache1m = { data: null, at: 0 };
+let cache15m = { data: null, at: 0 };
+let cache1h = { data: null, at: 0 };
+let cacheFunding = { data: null, at: 0 };
+let cacheOI = { data: null, at: 0 };
+const CACHE_TTL = 30_000;
 
-/**
- * Fetch recent 1-minute candles from Binance.
- */
-async function getCandles(symbol = 'SOLUSDT', interval = '1m', limit = 100) {
-  if (candleCache.data && Date.now() - candleCache.fetchedAt < CACHE_TTL_MS) {
-    return candleCache.data;
-  }
+// ---------------------------------------------------------------------------
+// Data Fetchers
+// ---------------------------------------------------------------------------
 
+async function fetchKlines(symbol, interval, limit, cache) {
+  if (cache.data && Date.now() - cache.at < CACHE_TTL) return cache.data;
   try {
-    const url = `${BINANCE_KLINES}?symbol=${symbol}&interval=${interval}&limit=${limit}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Binance API ${res.status}`);
-    const raw = await res.json();
-
+    const r = await fetch(`${BINANCE_API}/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
+    if (!r.ok) throw new Error(`${r.status}`);
+    const raw = await r.json();
     const candles = raw.map(k => ({
-      openTime: k[0],
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-      closeTime: k[6],
+      openTime: k[0], open: +k[1], high: +k[2], low: +k[3],
+      close: +k[4], volume: +k[5], closeTime: k[6],
     }));
-
-    candleCache = { data: candles, fetchedAt: Date.now() };
+    cache.data = candles;
+    cache.at = Date.now();
     return candles;
-  } catch (err) {
-    logger.warn('Failed to fetch candles', { error: err.message });
-    return candleCache.data || [];
+  } catch (e) {
+    logger.warn('Kline fetch failed', { interval, error: e.message });
+    return cache.data || [];
   }
 }
 
-/**
- * Fetch 15-minute candles for higher timeframe context.
- */
-async function getCandles15m(symbol = 'SOLUSDT', limit = 50) {
+async function getCandles1m() { return fetchKlines('SOLUSDT', '1m', 100, cache1m); }
+async function getCandles15m() { return fetchKlines('SOLUSDT', '15m', 50, cache15m); }
+async function getCandles1h() { return fetchKlines('SOLUSDT', '1h', 210, cache1h); }
+
+async function getFundingRate() {
+  if (cacheFunding.data !== null && Date.now() - cacheFunding.at < 60_000) return cacheFunding.data;
   try {
-    const url = `${BINANCE_KLINES}?symbol=${symbol}&interval=15m&limit=${limit}`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const raw = await res.json();
-    return raw.map(k => ({
-      open: parseFloat(k[1]),
-      high: parseFloat(k[2]),
-      low: parseFloat(k[3]),
-      close: parseFloat(k[4]),
-      volume: parseFloat(k[5]),
-    }));
+    const r = await fetch(`${BINANCE_FAPI}/fundingRate?symbol=SOLUSDT&limit=1`);
+    if (!r.ok) return cacheFunding.data || 0;
+    const d = await r.json();
+    const rate = parseFloat(d[0]?.fundingRate) || 0;
+    cacheFunding = { data: rate, at: Date.now() };
+    return rate;
   } catch {
-    return [];
+    return cacheFunding.data || 0;
+  }
+}
+
+async function getOpenInterest() {
+  if (cacheOI.data !== null && Date.now() - cacheOI.at < 60_000) return cacheOI.data;
+  try {
+    const r = await fetch(`${BINANCE_FAPI}/openInterest?symbol=SOLUSDT`);
+    if (!r.ok) return cacheOI.data || 0;
+    const d = await r.json();
+    const oi = parseFloat(d.openInterest) || 0;
+    cacheOI = { data: oi, at: Date.now() };
+    return oi;
+  } catch {
+    return cacheOI.data || 0;
   }
 }
 
@@ -78,119 +89,97 @@ async function getCandles15m(symbol = 'SOLUSDT', limit = 50) {
 // Technical Indicators
 // ---------------------------------------------------------------------------
 
-/**
- * Simple Moving Average
- */
 function sma(values, period) {
   if (values.length < period) return values[values.length - 1] || 0;
-  const slice = values.slice(-period);
-  return slice.reduce((s, v) => s + v, 0) / period;
+  return values.slice(-period).reduce((s, v) => s + v, 0) / period;
 }
 
-/**
- * Exponential Moving Average
- */
 function ema(values, period) {
-  if (values.length === 0) return 0;
+  if (!values.length) return 0;
   const k = 2 / (period + 1);
   let e = values[0];
-  for (let i = 1; i < values.length; i++) {
-    e = values[i] * k + e * (1 - k);
-  }
+  for (let i = 1; i < values.length; i++) e = values[i] * k + e * (1 - k);
   return e;
 }
 
-/**
- * RSI (Relative Strength Index)
- */
 function rsi(closes, period = 14) {
   if (closes.length < period + 1) return 50;
-
   let gains = 0, losses = 0;
   for (let i = 1; i <= period; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) gains += diff;
-    else losses -= diff;
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) gains += d; else losses -= d;
   }
-
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-
+  let ag = gains / period, al = losses / period;
   for (let i = period + 1; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1];
-    if (diff > 0) {
-      avgGain = (avgGain * (period - 1) + diff) / period;
-      avgLoss = (avgLoss * (period - 1)) / period;
-    } else {
-      avgGain = (avgGain * (period - 1)) / period;
-      avgLoss = (avgLoss * (period - 1) - diff) / period;
-    }
+    const d = closes[i] - closes[i - 1];
+    ag = (ag * (period - 1) + (d > 0 ? d : 0)) / period;
+    al = (al * (period - 1) + (d < 0 ? -d : 0)) / period;
   }
-
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
+  if (al === 0) return 100;
+  return 100 - 100 / (1 + ag / al);
 }
 
-/**
- * Average True Range (volatility)
- */
 function atr(candles, period = 14) {
   if (candles.length < 2) return 0;
   const trs = [];
   for (let i = 1; i < candles.length; i++) {
-    const tr = Math.max(
+    trs.push(Math.max(
       candles[i].high - candles[i].low,
       Math.abs(candles[i].high - candles[i - 1].close),
       Math.abs(candles[i].low - candles[i - 1].close),
-    );
-    trs.push(tr);
+    ));
   }
   return sma(trs, Math.min(period, trs.length));
 }
 
-/**
- * MACD (Moving Average Convergence Divergence)
- */
 function macd(closes) {
-  const fast = ema(closes, 12);
-  const slow = ema(closes, 26);
-  return fast - slow;
+  return ema(closes, 12) - ema(closes, 26);
 }
 
-/**
- * Detect current trading session.
- * Returns 'asia', 'europe', 'us', or 'overlap'.
- */
+// ---------------------------------------------------------------------------
+// Session & Volume Helpers
+// ---------------------------------------------------------------------------
+
 function getSession() {
-  const now = new Date();
-  const utcHour = now.getUTCHours();
-
-  // Asia: 00:00 - 08:00 UTC (Tokyo/Singapore)
-  // Europe: 07:00 - 16:00 UTC (London)
-  // US: 13:00 - 22:00 UTC (New York)
-  // Overlaps are the most volatile
-
-  if (utcHour >= 13 && utcHour < 16) return 'us-europe-overlap'; // highest volume
-  if (utcHour >= 13 && utcHour < 22) return 'us';
-  if (utcHour >= 7 && utcHour < 13) return 'europe';
-  if (utcHour >= 0 && utcHour < 8) return 'asia';
+  const h = new Date().getUTCHours();
+  if (h >= 13 && h < 16) return 'us-europe-overlap';
+  if (h >= 13 && h < 22) return 'us';
+  if (h >= 7 && h < 13) return 'europe';
+  if (h >= 0 && h < 8) return 'asia';
   return 'off-hours';
 }
 
-/**
- * Session score: how favorable is the current session for trading.
- * US and overlap sessions have the most volume and cleanest moves.
- */
 function sessionScore() {
-  const session = getSession();
-  switch (session) {
-    case 'us-europe-overlap': return 25;  // best time to trade
-    case 'us':                return 20;
-    case 'europe':            return 10;
-    case 'asia':              return 5;   // low vol, choppy
-    default:                  return 0;
+  switch (getSession()) {
+    case 'us-europe-overlap': return 25;
+    case 'us': return 20;
+    case 'europe': return 10;
+    case 'asia': return 5;
+    default: return 0;
   }
+}
+
+/**
+ * Volume score: compare recent volume to average.
+ * High volume on a move confirms it's real.
+ */
+function volumeScore(candles) {
+  if (candles.length < 30) return 0;
+  const volumes = candles.map(c => c.volume);
+  const avgVol = sma(volumes, 20);
+  const recentVol = sma(volumes.slice(-5), 5);
+  const ratio = avgVol > 0 ? recentVol / avgVol : 1;
+
+  // Recent candle direction (are volume candles bullish or bearish?)
+  const last5 = candles.slice(-5);
+  const bullishVol = last5.filter(c => c.close > c.open).reduce((s, c) => s + c.volume, 0);
+  const bearishVol = last5.filter(c => c.close <= c.open).reduce((s, c) => s + c.volume, 0);
+  const volBias = bullishVol > bearishVol ? 1 : -1;
+
+  if (ratio > 2.0) return 15 * volBias;   // very high volume
+  if (ratio > 1.5) return 10 * volBias;   // above average
+  if (ratio > 1.0) return 5 * volBias;    // slightly above
+  return 0;                                 // below average = no confirmation
 }
 
 // ---------------------------------------------------------------------------
@@ -198,155 +187,207 @@ function sessionScore() {
 // ---------------------------------------------------------------------------
 
 /**
- * Generate a market signal for SOL.
+ * Generate a comprehensive market signal for SOL.
  *
- * @returns {{ score: number, direction: 'long'|'short'|'wait', confidence: number, details: object }}
- *   score: -100 to +100 (negative = bearish, positive = bullish)
- *   direction: recommended trade direction
- *   confidence: 0 to 100
- *   details: breakdown of individual signals
+ * @returns {{ score, direction, confidence, leverage, details }}
  */
 export async function getMarketSignal() {
   try {
-    const [candles1m, candles15m] = await Promise.all([
-      getCandles('SOLUSDT', '1m', 100),
-      getCandles15m('SOLUSDT', 50),
+    const [c1m, c15m, c1h, funding] = await Promise.all([
+      getCandles1m(),
+      getCandles15m(),
+      getCandles1h(),
+      getFundingRate(),
     ]);
 
-    if (candles1m.length < 30) {
-      return { score: 0, direction: 'wait', confidence: 0, details: { error: 'insufficient data' } };
+    if (c1m.length < 30) {
+      return { score: 0, direction: 'wait', confidence: 0, leverage: 30, details: { error: 'insufficient data' } };
     }
 
-    const closes1m = candles1m.map(c => c.close);
-    const closes15m = candles15m.map(c => c.close);
-    const currentPrice = closes1m[closes1m.length - 1];
+    const closes1m = c1m.map(c => c.close);
+    const closes15m = c15m.map(c => c.close);
+    const closes1h = c1h.map(c => c.close);
+    const price = closes1m[closes1m.length - 1];
 
-    // --- 1. Momentum Signal (short-term direction) ---
-    // Compare fast EMA vs slow EMA on 1m chart
+    // === 1. Momentum (EMA crossovers on 1m) ===
     const ema5 = ema(closes1m, 5);
     const ema20 = ema(closes1m, 20);
     const ema50 = ema(closes1m, 50);
 
-    // EMA crossover score: fast above slow = bullish
     let momentumScore = 0;
-    if (ema5 > ema20) momentumScore += 15;
-    else momentumScore -= 15;
+    if (ema5 > ema20) momentumScore += 15; else momentumScore -= 15;
+    if (ema20 > ema50) momentumScore += 10; else momentumScore -= 10;
+    if (price > ema20) momentumScore += 5; else momentumScore -= 5;
 
-    if (ema20 > ema50) momentumScore += 10;
-    else momentumScore -= 10;
-
-    // Price vs EMA20: above = uptrend
-    if (currentPrice > ema20) momentumScore += 5;
-    else momentumScore -= 5;
-
-    // --- 2. RSI Signal ---
+    // === 2. RSI (context-aware) ===
     const rsiVal = rsi(closes1m, 14);
     let rsiScore = 0;
 
-    if (rsiVal < 30) rsiScore = 20;        // oversold = buy signal
-    else if (rsiVal < 40) rsiScore = 10;    // approaching oversold
-    else if (rsiVal > 70) rsiScore = -20;   // overbought = avoid longs
-    else if (rsiVal > 60) rsiScore = -5;    // approaching overbought
-    else rsiScore = 0;                       // neutral zone
+    // Check if we're in a strong HTF uptrend
+    const htfBullish = closes1h.length >= 50 && ema(closes1h, 10) > ema(closes1h, 50);
 
-    // --- 3. MACD Signal ---
+    if (rsiVal < 30) rsiScore = 20;          // oversold = strong buy
+    else if (rsiVal < 40) rsiScore = 10;
+    else if (rsiVal > 70 && !htfBullish) rsiScore = -20;  // overbought + weak trend = bearish
+    else if (rsiVal > 70 && htfBullish) rsiScore = 5;     // overbought but strong trend = still ok
+    else if (rsiVal > 60) rsiScore = -5;
+
+    // === 3. MACD ===
     const macdVal = macd(closes1m);
-    let macdScore = 0;
-    if (macdVal > 0) macdScore = 10;
-    else macdScore = -10;
+    const macdScore = macdVal > 0 ? 10 : -10;
 
-    // --- 4. Higher timeframe trend (15m) ---
+    // === 4. Higher Timeframe Trend ===
+    // 15m trend
     let htfScore = 0;
     if (closes15m.length >= 20) {
-      const ema10_15m = ema(closes15m, 10);
-      const ema20_15m = ema(closes15m, 20);
-      if (ema10_15m > ema20_15m) htfScore = 15;  // 15m uptrend
-      else htfScore = -15;                        // 15m downtrend
+      if (ema(closes15m, 10) > ema(closes15m, 20)) htfScore += 10;
+      else htfScore -= 10;
     }
 
-    // --- 5. Volatility check ---
-    const atrVal = atr(candles1m, 14);
-    const atrPct = currentPrice > 0 ? (atrVal / currentPrice) * 100 : 0;
+    // 1H EMA200 -- the big trend filter
+    if (closes1h.length >= 200) {
+      const ema200_1h = ema(closes1h, 200);
+      if (price > ema200_1h) htfScore += 10;  // above 1H EMA200 = bullish
+      else htfScore -= 10;                     // below = bearish
+    } else if (closes1h.length >= 50) {
+      // Fallback to 1H EMA50
+      const ema50_1h = ema(closes1h, 50);
+      if (price > ema50_1h) htfScore += 5;
+      else htfScore -= 5;
+    }
+
+    // === 5. Volatility ===
+    const atrVal = atr(c1m, 14);
+    const atrPct = price > 0 ? (atrVal / price) * 100 : 0;
     let volScore = 0;
+    if (atrPct > 0.05 && atrPct < 0.3) volScore = 10;
+    else if (atrPct >= 0.3) volScore = -5;
+    else volScore = -10;
 
-    // We want SOME volatility (need movement to profit) but not extreme chop
-    if (atrPct > 0.05 && atrPct < 0.3) volScore = 10;  // good volatility range
-    else if (atrPct >= 0.3) volScore = -5;                // too choppy
-    else volScore = -10;                                  // dead market
-
-    // --- 6. Session timing ---
+    // === 6. Session ===
     const sessScore = sessionScore();
 
-    // --- 7. Recent price action (last 5 candles momentum) ---
+    // === 7. Volume Confirmation ===
+    const volConfirm = volumeScore(c1m);
+
+    // === 8. Funding Rate ===
+    // High positive funding = overcrowded longs = bearish signal
+    // Negative funding = shorts paying longs = bullish
+    let fundingScore = 0;
+    if (funding > 0.0005) fundingScore = -15;       // very crowded longs
+    else if (funding > 0.0003) fundingScore = -10;   // moderately crowded
+    else if (funding > 0.0001) fundingScore = -5;    // slightly crowded
+    else if (funding < -0.0001) fundingScore = 10;   // shorts paying = bullish
+    else if (funding < -0.0003) fundingScore = 15;   // very bearish consensus = contrarian buy
+    else fundingScore = 0;
+
+    // === 9. Recent Price Action ===
     const last5 = closes1m.slice(-5);
     const recentMove = (last5[last5.length - 1] - last5[0]) / last5[0] * 100;
     let recentScore = 0;
-    if (recentMove > 0.1) recentScore = 10;       // strong recent up
+    if (recentMove > 0.1) recentScore = 10;
     else if (recentMove > 0.05) recentScore = 5;
-    else if (recentMove < -0.1) recentScore = -10; // strong recent down
+    else if (recentMove < -0.1) recentScore = -10;
     else if (recentMove < -0.05) recentScore = -5;
 
-    // --- Combine all signals ---
-    const totalScore = momentumScore + rsiScore + macdScore + htfScore + volScore + sessScore + recentScore;
+    // === Combine ===
+    const raw = momentumScore + rsiScore + macdScore + htfScore +
+                volScore + sessScore + volConfirm + fundingScore + recentScore;
+    const score = Math.max(-100, Math.min(100, raw));
 
-    // Clamp to -100..100
-    const clampedScore = Math.max(-100, Math.min(100, totalScore));
-
-    // Determine direction and confidence
+    // Direction
     let direction = 'wait';
-    let confidence = Math.abs(clampedScore);
+    if (score >= 25) direction = 'long';
+    else if (score <= -25) direction = 'short';
 
-    if (clampedScore >= 25) direction = 'long';
-    else if (clampedScore <= -25) direction = 'short';
-    else direction = 'wait';
+    const confidence = Math.abs(score);
+
+    // === Leverage scaling based on score ===
+    let leverage;
+    if (confidence >= 80) leverage = 100;
+    else if (confidence >= 60) leverage = 70;
+    else if (confidence >= 40) leverage = 50;
+    else if (confidence >= 20) leverage = 30;
+    else leverage = 20;
 
     const session = getSession();
 
     const details = {
-      currentPrice: currentPrice.toFixed(2),
+      currentPrice: price.toFixed(2),
       momentum: momentumScore,
-      rsi: { value: rsiVal.toFixed(1), score: rsiScore },
+      rsi: { value: rsiVal.toFixed(1), score: rsiScore, htfBullish },
       macd: { value: macdVal.toFixed(4), score: macdScore },
       htf: htfScore,
       volatility: { atrPct: atrPct.toFixed(4), score: volScore },
       session: { name: session, score: sessScore },
+      volume: volConfirm,
+      funding: { rate: (funding * 100).toFixed(4) + '%', score: fundingScore },
       recentMove: { pct: recentMove.toFixed(3) + '%', score: recentScore },
       ema: { ema5: ema5.toFixed(2), ema20: ema20.toFixed(2), ema50: ema50.toFixed(2) },
     };
 
-    logger.info('Market signal generated', {
-      score: clampedScore, direction, confidence,
-      price: currentPrice.toFixed(2), rsi: rsiVal.toFixed(1), session,
+    logger.info('Market signal v2', {
+      score, direction, confidence, leverage,
+      price: price.toFixed(2), rsi: rsiVal.toFixed(1),
+      funding: (funding * 100).toFixed(4) + '%', session,
     });
 
-    return { score: clampedScore, direction, confidence, details };
+    return { score, direction, confidence, leverage, details };
   } catch (err) {
     logger.error('Market signal error', { error: err.message });
-    return { score: 0, direction: 'wait', confidence: 0, details: { error: err.message } };
+    return { score: 0, direction: 'wait', confidence: 0, leverage: 30, details: { error: err.message } };
   }
 }
 
 /**
- * Quick check: should we enter a position right now?
- * Returns true if conditions are favorable.
+ * Check if we should enter a position right now.
+ * Returns entry decision + recommended leverage.
  */
 export async function shouldEnterNow() {
   const signal = await getMarketSignal();
 
-  // Require at least score >= 20 to enter long (our only direction for now)
-  // This filters out about 40-50% of random entries
-  if (signal.direction === 'long' && signal.score >= 20) {
+  // Strong signal: enter
+  if (signal.direction === 'long' && signal.score >= 25) {
     return { enter: true, signal };
   }
 
-  // In degen mode, if score is between 0 and 20, enter with 50% probability
-  // We don't want to sit out too long -- fees need to be deployed
-  if (signal.score > 0 && signal.score < 20) {
-    const roll = Math.random();
-    if (roll < 0.4) {
-      return { enter: true, signal: { ...signal, note: 'marginal-entry' } };
+  // Marginal positive: 40% chance to enter (degen mode, don't sit out forever)
+  if (signal.score > 0 && signal.score < 25) {
+    if (Math.random() < 0.4) {
+      return { enter: true, signal: { ...signal, leverage: Math.min(signal.leverage, 30), note: 'marginal-entry' } };
     }
   }
 
   return { enter: false, signal };
+}
+
+/**
+ * Check if we should EXIT an existing position.
+ * Called while a position is open to detect momentum reversal.
+ *
+ * @param {'long'|'short'} positionSide - current position direction
+ * @returns {{ shouldExit: boolean, reason: string, signal: object }}
+ */
+export async function shouldExitNow(positionSide = 'long') {
+  const signal = await getMarketSignal();
+
+  // For longs: exit if signal goes strongly negative (momentum reversal)
+  if (positionSide === 'long') {
+    if (signal.score <= -30) {
+      return { shouldExit: true, reason: 'momentum-reversal', signal };
+    }
+    // Funding rate extremely high = flush incoming
+    if (signal.details?.funding?.score <= -15) {
+      return { shouldExit: true, reason: 'overcrowded-funding', signal };
+    }
+  }
+
+  // For shorts: exit if signal goes strongly positive
+  if (positionSide === 'short') {
+    if (signal.score >= 30) {
+      return { shouldExit: true, reason: 'momentum-reversal', signal };
+    }
+  }
+
+  return { shouldExit: false, reason: 'hold', signal };
 }
