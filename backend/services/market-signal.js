@@ -345,16 +345,9 @@ export async function getMarketSignal() {
 export async function shouldEnterNow() {
   const signal = await getMarketSignal();
 
-  // Strong signal: enter
+  // Only enter on strong conviction (score >= 25)
   if (signal.direction === 'long' && signal.score >= 25) {
     return { enter: true, signal };
-  }
-
-  // Marginal positive: 40% chance to enter (degen mode, don't sit out forever)
-  if (signal.score > 0 && signal.score < 25) {
-    if (Math.random() < 0.4) {
-      return { enter: true, signal: { ...signal, leverage: 50, note: 'marginal-entry' } };
-    }
   }
 
   return { enter: false, signal };
