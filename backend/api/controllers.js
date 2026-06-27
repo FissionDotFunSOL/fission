@@ -567,9 +567,23 @@ export async function getLivePositions(_req, res) {
     }
 
     const { getPositionPnl } = await import('../services/jupiter-perps.js');
-    const { getSolPrice } = await import('../services/jupiter.js');
 
-    const solPrice = await getSolPrice();
+    // Get SOL price via multiple fallbacks
+    let solPrice = 0;
+    try {
+      const { getSolPrice } = await import('../services/jupiter.js');
+      solPrice = await getSolPrice();
+    } catch {}
+    if (!solPrice || solPrice <= 0) {
+      try {
+        const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
+        if (cgRes.ok) {
+          const cgData = await cgRes.json();
+          solPrice = cgData?.solana?.usd || 0;
+        }
+      } catch {}
+    }
+
     const markets = ['SOL', 'BTC', 'ETH'];
     const positions = [];
 
@@ -581,16 +595,25 @@ export async function getLivePositions(_req, res) {
             ? (info.size / info.collateralUsd).toFixed(1)
             : '-';
 
+          // Derive current price from PnL if we have it
+          let currentPrice = 0;
+          if (market === 'SOL') currentPrice = solPrice;
+          else if (market === 'BTC') currentPrice = solPrice * 400;
+          else if (market === 'ETH') currentPrice = solPrice * 16;
+
+          // If price sources failed, back-derive from PnL
+          if (currentPrice <= 0 && info.entry > 0 && info.size > 0) {
+            const pnlRatio = info.pnl / info.size;
+            currentPrice = info.entry * (1 + pnlRatio);
+          }
+
           positions.push({
             market,
             side: info.side || 'long',
             sizeUsd: info.size,
             collateralUsd: info.collateralUsd,
             entryPrice: info.entry,
-            currentPrice: market === 'SOL' ? solPrice
-              : market === 'BTC' ? solPrice * 400
-              : market === 'ETH' ? solPrice * 16
-              : solPrice,
+            currentPrice,
             unrealisedPnl: info.pnl,
             leverage,
           });
