@@ -26,7 +26,8 @@ export async function listTokens(_req, res) {
     // Auto-enrich tokens that still have CA prefix as name
     for (const t of tokens) {
       const mint = t.mint || t.id;
-      if (mint && t.name === mint.slice(0, 8)) {
+      const nameIsMissing = !t.name || t.name === mint?.slice(0, 8);
+      if (mint && nameIsMissing) {
         try {
           const pumpRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`);
           if (pumpRes.ok) {
