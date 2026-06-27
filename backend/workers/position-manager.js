@@ -258,6 +258,14 @@ export async function managePositionForToken(mint) {
     const effectiveLeverage = Math.min(leverage, maxLev);
     const sizeUsd = collateralUsd * effectiveLeverage;
 
+    // Minimum $100 position size — no tiny trades
+    if (sizeUsd < 100) {
+      logger.info('Position size too small, waiting for more funds', {
+        mint, sizeUsd: sizeUsd.toFixed(2), collateralSol: deployAmount.toFixed(4),
+      });
+      return null;
+    }
+
     // Token can be configured as long or short
     // direction already declared above
 
