@@ -561,63 +561,38 @@ let _livePositionCache = { data: null, expiresAt: 0 };
 
 export async function getLivePositions(_req, res) {
   try {
-    // Cache 10s to avoid hammering RPC
+    // Cache 10s
     if (_livePositionCache.data && Date.now() < _livePositionCache.expiresAt) {
       return res.json({ positions: _livePositionCache.data });
     }
 
-    const { getPositionPnl } = await import('../services/jupiter-perps.js');
+    const walletAddress = config.PROTOCOL_PUBKEY.toBase58();
 
-    // Get SOL price via multiple fallbacks
-    let solPrice = 0;
-    try {
-      const { getSolPrice } = await import('../services/jupiter.js');
-      solPrice = await getSolPrice();
-    } catch {}
-    if (!solPrice || solPrice <= 0) {
-      try {
-        const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
-        if (cgRes.ok) {
-          const cgData = await cgRes.json();
-          solPrice = cgData?.solana?.usd || 0;
-        }
-      } catch {}
+    // Use Jupiter's own Perps API — exact same data as the Jupiter UI
+    const jupResp = await fetch(`https://perps-api.jup.ag/v1/positions?walletAddress=${walletAddress}`);
+    if (!jupResp.ok) {
+      logger.warn('Jupiter Perps API failed', { status: jupResp.status });
+      return res.json({ positions: [] });
     }
 
-    const markets = ['SOL', 'BTC', 'ETH'];
-    const positions = [];
-
-    for (const market of markets) {
-      try {
-        const info = await getPositionPnl(market);
-        if (info.exists) {
-          const leverage = info.collateralUsd > 0
-            ? (info.size / info.collateralUsd).toFixed(1)
-            : '-';
-
-          // Use currentPrice from getPositionPnl (has Jupiter + CoinGecko + Binance fallbacks)
-          let currentPrice = info.currentPrice || 0;
-
-          // Extra fallback: use solPrice from controller if getPositionPnl price failed
-          if (currentPrice <= 0 && solPrice > 0) {
-            if (market === 'SOL') currentPrice = solPrice;
-            else if (market === 'BTC') currentPrice = solPrice * 400;
-            else if (market === 'ETH') currentPrice = solPrice * 16;
-          }
-
-          positions.push({
-            market,
-            side: info.side || 'long',
-            sizeUsd: info.size,
-            collateralUsd: info.collateralUsd,
-            entryPrice: info.entry,
-            currentPrice,
-            unrealisedPnl: info.pnl,
-            leverage,
-          });
-        }
-      } catch {}
-    }
+    const jupData = await jupResp.json();
+    const positions = (jupData.dataList || []).map(p => ({
+      market: p.marketMint === 'So11111111111111111111111111111111111111112' ? 'SOL'
+        : p.marketMint === '3NZ9JMVBmGAqocybic2c7LQCJScmgsAZ6vQqTDzcqmJh' ? 'BTC'
+        : p.marketMint === '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs' ? 'ETH'
+        : p.marketMint?.slice(0, 8),
+      side: p.side || 'long',
+      sizeUsd: parseFloat(p.size) || 0,
+      collateralUsd: parseFloat(p.collateral) || 0,
+      entryPrice: parseFloat(p.entryPrice) || 0,
+      currentPrice: parseFloat(p.markPrice) || 0,
+      unrealisedPnl: parseFloat(p.pnlAfterFeesUsd) || 0,
+      pnlBeforeFees: parseFloat(p.pnlBeforeFeesUsd) || 0,
+      totalFees: parseFloat(p.totalFeesUsd) || 0,
+      leverage: p.leverage || '-',
+      liquidationPrice: parseFloat(p.liquidationPrice) || 0,
+      value: parseFloat(p.value) || 0,
+    }));
 
     _livePositionCache = { data: positions, expiresAt: Date.now() + 10_000 };
     res.json({ positions });

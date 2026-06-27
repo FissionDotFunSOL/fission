@@ -31,11 +31,10 @@ async function loadPositions(grid) {
 
     grid.innerHTML = positions.map(p => {
       const pnl = p.unrealisedPnl || 0;
+      const pnlBefore = p.pnlBeforeFees || 0;
       const pnlColor = pnl >= 0 ? '#4ade80' : '#f87171';
       const pnlSign = pnl >= 0 ? '+' : '';
-      const pnlPct = p.entryPrice > 0
-        ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100 * (p.side === 'short' ? -1 : 1)).toFixed(2)
-        : '0.00';
+      const pnlPct = p.collateralUsd > 0 ? (pnl / p.collateralUsd * 100).toFixed(2) : '0.00';
       const pnlPctColor = parseFloat(pnlPct) >= 0 ? '#4ade80' : '#f87171';
       const borderGlow = pnl >= 0 ? 'rgba(0,255,170,0.2)' : 'rgba(255,80,80,0.2)';
 
@@ -56,14 +55,18 @@ async function loadPositions(grid) {
             <div style="font-size:0.65rem;color:${pnlPctColor};">${pnlPct}%</div>
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.7rem;">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;font-size:0.7rem;">
           <div>
             <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">SIZE</div>
-            <div style="color:var(--text-primary);">$${p.sizeUsd.toFixed(2)}</div>
+            <div style="color:var(--text-primary);">$${p.sizeUsd.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
           </div>
           <div>
             <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">COLLATERAL</div>
             <div style="color:var(--text-primary);">$${p.collateralUsd.toFixed(2)}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">VALUE</div>
+            <div style="color:var(--text-primary);">$${(p.value || p.collateralUsd).toFixed(2)}</div>
           </div>
           <div>
             <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">ENTRY</div>
@@ -73,6 +76,14 @@ async function loadPositions(grid) {
             <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">MARK</div>
             <div style="color:var(--text-primary);">$${p.currentPrice.toFixed(2)}</div>
           </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">LIQ. PRICE</div>
+            <div style="color:#f87171;">$${(p.liquidationPrice || 0).toFixed(2)}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.04);display:flex;justify-content:space-between;font-size:0.6rem;color:var(--text-muted);">
+          <span>PnL before fees: <span style="color:${pnlBefore >= 0 ? '#4ade80' : '#f87171'};">${pnlBefore >= 0 ? '+' : ''}$${pnlBefore.toFixed(2)}</span></span>
+          <span>Fees: $${(p.totalFees || 0).toFixed(2)}</span>
         </div>
       </div>`;
     }).join('');
