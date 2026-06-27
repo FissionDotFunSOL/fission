@@ -199,7 +199,7 @@ function renderTable() {
     const hasFees = !hasPosition && row.pnl > 0;
     const statusCell = hasPosition
       ? `<td style="color:${pnlColor};font-family:var(--font-mono);">
-          ${pnlSign}${formatCurrency(row.pnl)}
+          ${pnlSign}${row.pnl.toFixed(3)} SOL
         </td>
         <td style="font-family:var(--font-mono);">${formatCurrency(row.sizeUsd)}</td>`
       : hasFees

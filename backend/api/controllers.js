@@ -313,12 +313,18 @@ export async function listPositions(_req, res) {
 
       // If this token has capital deployed and a live position exists
       if (deployed > 0 && livePosition) {
+        // Convert live PnL from USD to SOL for consistency, then add total fees
+        const solPrice = livePosition.markPrice || 72;
+        const livePnlSol = solPrice > 0 ? livePosition.pnl / solPrice : 0;
+        const totalPnl = totalFeesSol + livePnlSol;
+
         return {
           ...base,
           entry: livePosition.entry,
           sizeUsd: livePosition.sizeUsd,
           collateralUsd: livePosition.collateralUsd,
-          pnl: livePosition.pnl,
+          pnl: totalPnl,
+          livePnlUsd: livePosition.pnl,
           positionExists: true,
           status: 'active',
           statusText: 'Position active',
