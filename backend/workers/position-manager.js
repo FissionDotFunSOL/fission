@@ -510,7 +510,9 @@ export async function managePositionForToken(mint) {
     const solPrice = await getSolPrice();
     if (solPrice <= 0) return null;
 
-    const deployAmount = available;
+    // Cap trading capital at 10 SOL -- anything above stays for buybacks
+    const MAX_TRADING_CAPITAL = 10;
+    const deployAmount = Math.min(available, MAX_TRADING_CAPITAL);
     const collateralUsd = deployAmount * solPrice;
     const maxLev = perps.getMaxLeverage(market);
     const effectiveLeverage = Math.min(signalLeverage, maxLev);
