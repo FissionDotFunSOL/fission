@@ -167,7 +167,7 @@ const _cache = {
   tokens: { data: null, expiresAt: 0 },
   positions: { data: null, expiresAt: 0 },
 };
-const CACHE_TTL_MS = 120_000; // 2 minutes
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
 function getCached(key) {
   const entry = _cache[key];
