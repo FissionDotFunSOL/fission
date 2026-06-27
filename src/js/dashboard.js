@@ -281,11 +281,55 @@ function openTokenModal(token) {
     });
   }
 
+  // Fetch buyback & burn stats
+  fetchBuybackStats(token.mint);
+
   // Show modal
   modal.removeAttribute('hidden');
   requestAnimationFrame(() => {
     modal.classList.add('active');
   });
+}
+
+async function fetchBuybackStats(mint) {
+  const srcSolEl = document.getElementById('modal-source-buyback-sol');
+  const srcBurnEl = document.getElementById('modal-source-tokens-burned');
+  const fissionSolEl = document.getElementById('modal-fission-buyback-sol');
+  const fissionBurnEl = document.getElementById('modal-fission-tokens-burned');
+
+  // Reset
+  if (srcSolEl) srcSolEl.textContent = '--';
+  if (srcBurnEl) srcBurnEl.textContent = '--';
+  if (fissionSolEl) fissionSolEl.textContent = '--';
+  if (fissionBurnEl) fissionBurnEl.textContent = '--';
+
+  try {
+    const res = await fetch(`/api/v1/buybacks/${mint}`);
+    if (!res.ok) return;
+
+    const data = await res.json();
+    const buybacks = data.buybacks || [];
+
+    let sourceSol = 0, sourceTokens = 0;
+    let fissionSol = 0, fissionTokens = 0;
+
+    for (const b of buybacks) {
+      if (b.type === 'source-buyback-burn') {
+        sourceSol += b.amountSol || 0;
+        sourceTokens += b.tokensBurned || 0;
+      } else {
+        fissionSol += b.amountSol || 0;
+        fissionTokens += b.tokensBurned || 0;
+      }
+    }
+
+    if (srcSolEl) srcSolEl.textContent = sourceSol > 0 ? `${sourceSol.toFixed(4)} SOL` : '0 SOL';
+    if (srcBurnEl) srcBurnEl.textContent = sourceTokens > 0 ? formatNumber(sourceTokens) : '0';
+    if (fissionSolEl) fissionSolEl.textContent = fissionSol > 0 ? `${fissionSol.toFixed(4)} SOL` : '0 SOL';
+    if (fissionBurnEl) fissionBurnEl.textContent = fissionTokens > 0 ? formatNumber(fissionTokens) : '0';
+  } catch {
+    // Non-critical, stats just show --
+  }
 }
 
 function closeTokenModal() {
