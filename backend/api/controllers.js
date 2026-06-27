@@ -255,38 +255,81 @@ export async function registerToken(req, res) {
 // ---------------------------------------------------------------------------
 export async function listPositions(_req, res) {
   try {
-    const positions = await db.getAllPositions();
+    const [positions, tokens] = await Promise.all([
+      db.getAllPositions(),
+      db.getAllTokens(),
+    ]);
 
-    // Enrich with live on-chain PnL data + status
-    const perps = await import('../services/perps-router.js');
-    const enriched = await Promise.all(positions.map(async (pos) => {
-      try {
-        if (!pos.market) return { ...pos, status: 'no-market', statusText: 'No market assigned' };
-        const pnlInfo = await perps.getPositionPnl(pos.market, pos.side || 'long');
-        if (pnlInfo.exists) {
-          return {
-            ...pos,
-            entry: pnlInfo.entry || pos.entry,
-            sizeUsd: pnlInfo.size || pos.sizeUsd,
-            collateralUsd: pnlInfo.collateralUsd || pos.collateralUsd,
-            pnl: pnlInfo.pnl || 0,
-            side: pnlInfo.side || pos.side,
-            positionExists: true,
-            status: 'active',
-            statusText: 'Position active',
+    // Fetch live Jupiter position ONCE (not per-token)
+    let livePosition = null;
+    try {
+      const walletAddress = config.PROTOCOL_PUBKEY.toBase58();
+      const jupResp = await fetch(`https://perps-api.jup.ag/v1/positions?walletAddress=${walletAddress}`);
+      if (jupResp.ok) {
+        const jupData = await jupResp.json();
+        if (jupData.dataList?.length > 0) {
+          const p = jupData.dataList[0];
+          livePosition = {
+            entry: parseFloat(p.entryPrice) || 0,
+            sizeUsd: parseFloat(p.size) || 0,
+            collateralUsd: parseFloat(p.collateral) || 0,
+            pnl: parseFloat(p.pnlAfterFeesUsd) || 0,
+            leverage: parseFloat(p.leverage) || 0,
+            side: p.side || 'long',
+            liquidationPrice: parseFloat(p.liquidationPrice) || 0,
+            markPrice: parseFloat(p.markPrice) || 0,
           };
         }
-        // Position doesn't exist on-chain
-        const deployed = pos.deployedSol || 0;
-        let statusText = 'Collecting fees';
-        if (deployed > 0) statusText = 'Liquidated - awaiting re-entry';
-        else if (pos.lastAction === 'liquidated-detected' || pos.riskAlert === 'position-missing') statusText = 'Liquidated - awaiting re-entry';
-        else if (pos.lastAction === 'circuit-breaker-close') statusText = 'Paused - circuit breaker';
-        return { ...pos, positionExists: false, status: deployed > 0 ? 'liquidated' : 'collecting', statusText };
-      } catch {
-        return { ...pos, status: 'error', statusText: 'RPC error' };
       }
-    }));
+    } catch {}
+
+    // Build enriched list per token
+    const activeTokens = tokens.filter(t => t.status === 'active');
+    const enriched = activeTokens.map(token => {
+      const mint = token.id || token.mint;
+      const pos = positions.find(p => p.id === mint);
+      const deployed = pos?.deployedSol || 0;
+
+      const base = {
+        id: mint,
+        tokenName: token.name || token.symbol || mint.slice(0, 8),
+        symbol: token.symbol || '?',
+        market: token.underlying || 'SOL',
+        side: token.side || 'long',
+        leverage: token.leverage || config.RISK?.leverage || 100,
+        deployedSol: deployed,
+      };
+
+      // If this token has capital deployed and a live position exists
+      if (deployed > 0 && livePosition) {
+        return {
+          ...base,
+          entry: livePosition.entry,
+          sizeUsd: livePosition.sizeUsd,
+          collateralUsd: livePosition.collateralUsd,
+          pnl: livePosition.pnl,
+          positionExists: true,
+          status: 'active',
+          statusText: 'Position active',
+        };
+      }
+
+      // No deployed capital -- show status
+      let statusText = 'Collecting fees';
+      if (pos?.lastAction === 'external-close-detected' || pos?.riskAlert === 'position-missing') {
+        statusText = 'Awaiting re-entry';
+      }
+
+      return {
+        ...base,
+        entry: null,
+        sizeUsd: null,
+        pnl: null,
+        positionExists: false,
+        status: 'collecting',
+        statusText,
+      };
+    });
 
     res.json({ positions: enriched });
   } catch (err) {
