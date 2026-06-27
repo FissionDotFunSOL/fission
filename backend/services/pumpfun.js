@@ -186,21 +186,53 @@ export async function verifySharingConfig(mint) {
 }
 
 // ---------------------------------------------------------------------------
-// Build collect creator fees instructions
-// Uses collectCoinCreatorFeeInstructions (V1) which works for all tokens.
-// The old buildDistributeCreatorFeesInstructions only works for tokens with
-// sharing configs, which none of our tokens have.
+// Build fee claim instructions.
+// Strategy:
+//   1. Try buildDistributeCreatorFeesInstructions (sharing config distribution)
+//      This is where Pump.fun UI fees actually accumulate.
+//      Returns { instructions: [...], isGraduated } (an object, NOT an array).
+//   2. Fall back to collectCoinCreatorFeeInstructions (legacy creator vault)
 // ---------------------------------------------------------------------------
-export async function buildCollectFeesIx(mint) {
+export async function buildClaimFeesIx(mint) {
   const mintPk = typeof mint === 'string' ? new PublicKey(mint) : mint;
 
-  try {
-    await loadSdk();
-    const conn = getConnection();
-    logger.info('Building collect creator fees IX', { mint: mintPk.toBase58() });
-    const sdk = new _OnlinePumpSdk(conn);
+  await loadSdk();
+  const conn = getConnection();
+  const sdk = new _OnlinePumpSdk(conn);
 
-    // V1 method: works for all tokens regardless of sharing config
+  // Method 1: Distribute via sharing config (where Pump.fun UI fees live)
+  try {
+    logger.info('Trying distribute (sharing config) method', { mint: mintPk.toBase58() });
+    const result = await sdk.buildDistributeCreatorFeesInstructions(mintPk);
+
+    // SDK returns { instructions: [...], isGraduated: bool }
+    let ixArray = [];
+    if (result?.instructions && Array.isArray(result.instructions)) {
+      ixArray = result.instructions;
+    } else if (Array.isArray(result)) {
+      ixArray = result;
+    } else if (result?.programId) {
+      ixArray = [result];
+    }
+
+    if (ixArray.length > 0) {
+      logger.info('Built distribute fees IX (sharing config)', {
+        mint: mintPk.toBase58(),
+        ixCount: ixArray.length,
+        isGraduated: result?.isGraduated,
+      });
+      return { instructions: ixArray, method: 'distribute' };
+    }
+  } catch (distErr) {
+    logger.debug('Distribute method unavailable, trying collect', {
+      mint: mintPk.toBase58(),
+      error: distErr.message,
+    });
+  }
+
+  // Method 2: Collect from creator vault (legacy)
+  try {
+    logger.info('Trying collect (creator vault) method', { mint: mintPk.toBase58() });
     const instructions = await sdk.collectCoinCreatorFeeInstructions(
       mintPk,
       config.PROTOCOL_PUBKEY
@@ -208,24 +240,26 @@ export async function buildCollectFeesIx(mint) {
 
     const ixArray = Array.isArray(instructions) ? instructions : (instructions ? [instructions] : []);
 
-    logger.info('Built collect fees IX', {
+    if (ixArray.length > 0) {
+      logger.info('Built collect fees IX (creator vault)', {
+        mint: mintPk.toBase58(),
+        ixCount: ixArray.length,
+      });
+      return { instructions: ixArray, method: 'collect' };
+    }
+  } catch (collectErr) {
+    logger.error('Both fee claim methods failed', {
       mint: mintPk.toBase58(),
-      ixCount: ixArray.length,
+      error: collectErr.message,
     });
-
-    return { instructions: ixArray };
-  } catch (err) {
-    logger.error('buildCollectFeesIx failed', {
-      mint: mintPk.toBase58(),
-      error: err.message,
-      stack: err.stack,
-    });
-    throw err;
   }
+
+  return { instructions: [], method: 'none' };
 }
 
-// Keep legacy name for backwards compat
-export const buildDistributeFeesIx = buildCollectFeesIx;
+// Legacy aliases
+export const buildCollectFeesIx = buildClaimFeesIx;
+export const buildDistributeFeesIx = buildClaimFeesIx;
 
 // ---------------------------------------------------------------------------
 // Get unclaimed creator vault balance (both programs)
@@ -236,7 +270,6 @@ export async function getUnclaimedBalance(mint) {
     await loadSdk();
     const conn = getConnection();
     const sdk = new _OnlinePumpSdk(conn);
-    // Use the combined method that checks both AMM and fee program vaults
     const balance = await sdk.getCreatorVaultBalanceBothPrograms(mintPk);
     return balance;
   } catch (err) {
@@ -246,7 +279,7 @@ export async function getUnclaimedBalance(mint) {
 }
 
 // ---------------------------------------------------------------------------
-// Execute fee collection (claim)
+// Execute fee claim
 // ---------------------------------------------------------------------------
 export async function claimFees(mint) {
   const mintPk = typeof mint === 'string' ? new PublicKey(mint) : mint;
@@ -255,17 +288,17 @@ export async function claimFees(mint) {
     throw new Error('Protocol keypair not loaded -- cannot sign transactions');
   }
 
-  const { instructions } = await buildCollectFeesIx(mintPk);
+  const { instructions, method } = await buildClaimFeesIx(mintPk);
 
   if (!instructions || instructions.length === 0) {
-    logger.info('No collect instructions (possibly no fees to claim)', {
+    logger.info('No fee claim instructions available', {
       mint: mintPk.toBase58(),
     });
     return null;
   }
 
   const sig = await sendTx(instructions, [config.protocolKeypair]);
-  logger.info('Fees collected', { mint: mintPk.toBase58(), signature: sig });
+  logger.info('Fees claimed', { mint: mintPk.toBase58(), method, signature: sig });
   return sig;
 }
 
