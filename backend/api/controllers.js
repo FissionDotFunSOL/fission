@@ -255,10 +255,19 @@ export async function registerToken(req, res) {
 // ---------------------------------------------------------------------------
 export async function listPositions(_req, res) {
   try {
-    const [positions, tokens] = await Promise.all([
+    const [positions, tokens, allRuns] = await Promise.all([
       db.getAllPositions(),
       db.getAllTokens(),
+      db.getAllRuns(500),
     ]);
+
+    // Calculate total fees claimed per token from runs
+    const feesByToken = {};
+    for (const run of allRuns) {
+      const mint = run.tokenMint;
+      if (!mint) continue;
+      feesByToken[mint] = (feesByToken[mint] || 0) + (run.feesClaimed || 0);
+    }
 
     // Fetch live Jupiter position ONCE (not per-token)
     let livePosition = null;
@@ -289,6 +298,7 @@ export async function listPositions(_req, res) {
       const mint = token.id || token.mint;
       const pos = positions.find(p => p.id === mint);
       const deployed = pos?.deployedSol || 0;
+      const totalFeesSol = feesByToken[mint] || 0;
 
       const base = {
         id: mint,
@@ -298,6 +308,7 @@ export async function listPositions(_req, res) {
         side: token.side || 'long',
         leverage: token.leverage || config.RISK?.leverage || 100,
         deployedSol: deployed,
+        totalFeesSol,
       };
 
       // If this token has capital deployed and a live position exists
@@ -314,7 +325,7 @@ export async function listPositions(_req, res) {
         };
       }
 
-      // No deployed capital -- show status
+      // No deployed capital -- show total fees as the PnL
       let statusText = 'Collecting fees';
       if (pos?.lastAction === 'external-close-detected' || pos?.riskAlert === 'position-missing') {
         statusText = 'Awaiting re-entry';
@@ -324,7 +335,7 @@ export async function listPositions(_req, res) {
         ...base,
         entry: null,
         sizeUsd: null,
-        pnl: null,
+        pnl: totalFeesSol > 0 ? totalFeesSol : null,
         positionExists: false,
         status: 'collecting',
         statusText,

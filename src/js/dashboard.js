@@ -196,14 +196,22 @@ function renderTable() {
     if (row.statusText?.includes('Liquidated')) dotColor = '#f87171'; // red
 
     // Status text for non-active positions
+    const hasFees = !hasPosition && row.pnl > 0;
     const statusCell = hasPosition
       ? `<td style="color:${pnlColor};font-family:var(--font-mono);">
           ${pnlSign}${formatCurrency(row.pnl)}
         </td>
         <td style="font-family:var(--font-mono);">${formatCurrency(row.sizeUsd)}</td>`
-      : `<td colspan="2" style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.7rem;font-style:italic;">
-          ${row.statusText || 'Collecting fees'}
-        </td>`;
+      : hasFees
+        ? `<td style="color:var(--green, #00ff88);font-family:var(--font-mono);">
+            +${row.pnl.toFixed(3)} SOL
+          </td>
+          <td style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.7rem;font-style:italic;">
+            ${row.statusText || 'Collecting fees'}
+          </td>`
+        : `<td colspan="2" style="font-family:var(--font-mono);color:var(--text-muted);font-size:0.7rem;font-style:italic;">
+            ${row.statusText || 'Collecting fees'}
+          </td>`;
 
     return `
     <tr class="dashboard-row" data-token="${row.mint}" style="cursor:pointer;">
