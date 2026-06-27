@@ -348,7 +348,14 @@ export async function getStats(_req, res) {
       db.getAllBuybacks(),
     ]);
 
-    const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0);
+    // Get correction offset for claims made outside the worker (e.g. manual CLI claims)
+    let feesOffset = 0;
+    try {
+      const statsConfig = await db.getDoc('config', 'stats');
+      feesOffset = statsConfig?.feesClaimedOffset || 0;
+    } catch {}
+
+    const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0) + feesOffset;
     const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0);
     const totalBurned      = buybacks.reduce((sum, b) => sum + (b.tokensBurned || 0), 0);
     const totalPnl         = positions.reduce((sum, p) => sum + (p.pnl || 0), 0);
