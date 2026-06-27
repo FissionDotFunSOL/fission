@@ -6,6 +6,7 @@ import { getAllTokens } from '../db/firebase.js';
 import { getSolPrice } from '../services/jupiter.js';
 import { getSolBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
+import { shouldEnterNow, getMarketSignal } from '../services/market-signal.js';
 
 // ---------------------------------------------------------------------------
 // High-Leverage Scalping Strategy
@@ -332,6 +333,27 @@ export async function managePositionForToken(mint) {
     const allPositions = await db.getAllPositions();
     const hasActive = allPositions.some(p => (p.deployedSol || 0) > 0);
     if (hasActive) return null;
+
+    // --- MARKET SIGNAL CHECK ---
+    // Don't blindly open -- check momentum, RSI, session, volatility
+    try {
+      const { enter, signal } = await shouldEnterNow();
+      if (!enter) {
+        logger.info('Market signal says WAIT -- skipping entry', {
+          mint, score: signal.score, direction: signal.direction,
+          rsi: signal.details?.rsi?.value,
+          session: signal.details?.session?.name,
+        });
+        return null;
+      }
+      logger.info('Market signal FAVORABLE -- proceeding with entry', {
+        mint, score: signal.score, direction: signal.direction,
+        note: signal.note || '',
+      });
+    } catch (sigErr) {
+      // If signal check fails, enter anyway (degen mode)
+      logger.warn('Signal check failed, entering anyway', { error: sigErr.message });
+    }
 
     // Use the token's configured leverage
     const solPrice = await getSolPrice();
