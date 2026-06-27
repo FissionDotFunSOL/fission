@@ -162,8 +162,30 @@ export async function deleteDoc(collection, id) {
 // Collection-specific convenience helpers
 // ---------------------------------------------------------------------------
 
+// In-memory cache to prevent Firestore quota exhaustion
+const _cache = {
+  tokens: { data: null, expiresAt: 0 },
+  positions: { data: null, expiresAt: 0 },
+};
+const CACHE_TTL_MS = 120_000; // 2 minutes
+
+function getCached(key) {
+  const entry = _cache[key];
+  if (entry && entry.data && Date.now() < entry.expiresAt) return entry.data;
+  return null;
+}
+
+function setCache(key, data) {
+  _cache[key] = { data, expiresAt: Date.now() + CACHE_TTL_MS };
+}
+
+function invalidateCache(key) {
+  if (_cache[key]) _cache[key].expiresAt = 0;
+}
+
 // --- tokens ---
 export async function addToken(data) {
+  invalidateCache('tokens');
   return addDoc('tokens', { ...data, mint: data.mint || null, createdAt: Date.now(), status: 'active' });
 }
 
@@ -173,11 +195,16 @@ export async function getToken(mint) {
 }
 
 export async function setToken(mint, data) {
+  invalidateCache('tokens');
   return setDoc('tokens', mint, data);
 }
 
 export async function getAllTokens() {
-  return getAllDocs('tokens');
+  const cached = getCached('tokens');
+  if (cached) return cached;
+  const result = await getAllDocs('tokens');
+  setCache('tokens', result);
+  return result;
 }
 
 // --- positions ---
@@ -186,11 +213,16 @@ export async function getPosition(mint) {
 }
 
 export async function setPosition(mint, data) {
+  invalidateCache('positions');
   return setDoc('positions', mint, { ...data, updatedAt: Date.now() });
 }
 
 export async function getAllPositions() {
-  return getAllDocs('positions');
+  const cached = getCached('positions');
+  if (cached) return cached;
+  const result = await getAllDocs('positions');
+  setCache('positions', result);
+  return result;
 }
 
 // --- runs ---
