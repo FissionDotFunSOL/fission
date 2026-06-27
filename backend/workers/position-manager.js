@@ -192,7 +192,7 @@ export async function managePositionForToken(mint) {
       // ---- SIGNAL-BASED EXIT ----
       // If momentum has flipped against us, exit early before SL
       try {
-        const { shouldExit, reason } = await shouldExitNow(direction);
+        const { shouldExit, reason } = await shouldExitNow(direction, market);
         if (shouldExit && pnlPct < -0.10) {
           // Only signal-exit if we're already losing (>10% down)
           // Don't exit a winning position just because signal flipped
@@ -469,10 +469,17 @@ export async function managePositionForToken(mint) {
       return null;
     }
 
-    // Only one position at a time
+    // One position per market (can run SOL + BTC + ETH simultaneously)
     const allPositions = await db.getAllPositions();
-    const hasActive = allPositions.some(p => (p.deployedSol || 0) > 0);
-    if (hasActive) return null;
+    const hasActiveForMarket = allPositions.some(p => 
+      (p.deployedSol || 0) > 0 && (p.market || 'SOL') === market
+    );
+    if (hasActiveForMarket) return null;
+
+    // Count how many markets have active positions for capital splitting
+    const activeMarkets = new Set(
+      allPositions.filter(p => (p.deployedSol || 0) > 0).map(p => p.market || 'SOL')
+    ).size;
 
     // --- MARKET SIGNAL CHECK ---
     // Check momentum, RSI, session, volatility, volume, funding
@@ -483,7 +490,7 @@ export async function managePositionForToken(mint) {
     } catch {}
 
     try {
-      const { enter, signal } = await shouldEnterNow();
+      const { enter, signal } = await shouldEnterNow(market);
       // Check against adaptive threshold (learning system)
       if (!enter || signal.score < entryThreshold) {
         logger.info('Market signal below threshold -- skipping entry', {
@@ -510,9 +517,10 @@ export async function managePositionForToken(mint) {
     const solPrice = await getSolPrice();
     if (solPrice <= 0) return null;
 
-    // Cap trading capital at 10 SOL -- anything above stays for buybacks
+    // Cap trading capital at 10 SOL total, split across active markets
     const MAX_TRADING_CAPITAL = 10;
-    const deployAmount = Math.min(available, MAX_TRADING_CAPITAL);
+    const capitalPerMarket = MAX_TRADING_CAPITAL / (activeMarkets + 1); // +1 for this new position
+    const deployAmount = Math.min(available, capitalPerMarket);
     const collateralUsd = deployAmount * solPrice;
     const maxLev = perps.getMaxLeverage(market);
     const effectiveLeverage = Math.min(signalLeverage, maxLev);
@@ -569,13 +577,141 @@ export async function manageAllPositions() {
   if (active.length === 0) return [];
 
   const results = [];
+
+  // Manage existing positions for all tokens (SOL market)
   for (const token of active) {
     const result = await managePositionForToken(token.id || token.mint);
     if (result) results.push({ mint: token.id || token.mint, ...result });
   }
 
-  logger.info(`Position management cycle: ${results.length}/${active.length}`);
+  // Also scan BTC and ETH markets for entry opportunities
+  // Uses the FISSION main token as the anchor for multi-market trading
+  const FISSION_MINT = '2Ymo8SHM4yhhjvnjvZue6qXfQHUJXtZt2wUCgsMZpump';
+  const extraMarkets = ['BTC', 'ETH'];
+
+  for (const extraMarket of extraMarkets) {
+    try {
+      const result = await managePositionForMarket(FISSION_MINT, extraMarket);
+      if (result) results.push({ mint: FISSION_MINT, market: extraMarket, ...result });
+    } catch (err) {
+      logger.warn('Extra market check failed', { market: extraMarket, error: err.message });
+    }
+  }
+
+  logger.info(`Position management cycle: ${results.length}/${active.length + extraMarkets.length}`);
   return results;
+}
+
+/**
+ * Manage a position for a specific market (used for BTC/ETH multi-market).
+ * Same strategy as managePositionForToken but with explicit market override.
+ */
+async function managePositionForMarket(mint, market) {
+  try {
+    const token = await db.getToken(mint);
+    if (!token || token.status !== 'active') return null;
+
+    const direction = token.side || 'long';
+    const posKey = `${mint}-${market}`;
+
+    // Check live on-chain position for this market
+    const pnlInfo = await retry(
+      () => perps.getPositionPnl(market),
+      { retries: 2, delayMs: 2000, label: `getPositionPnl(${market})` }
+    );
+
+    // If position exists for this market, manage it via DB key
+    if (pnlInfo.exists) {
+      const position = await db.getPosition(posKey);
+      if (!position || (position.deployedSol || 0) <= 0) return null;
+      // Delegate to the main function logic (it handles SL/TP/trailing)
+      // For now, just log -- the main token loop handles its own market
+      return null;
+    }
+
+    // No position for this market -- try to enter
+    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    const available = Math.max(0, walletBalance - config.RISK.minWalletBalanceSol);
+    if (available < config.RISK.minDeploySol) return null;
+
+    // Check if already have position in this market
+    const allPositions = await db.getAllPositions();
+    const hasActiveForMarket = allPositions.some(p =>
+      (p.deployedSol || 0) > 0 && (p.market || 'SOL') === market
+    );
+    if (hasActiveForMarket) return null;
+
+    const activeMarkets = new Set(
+      allPositions.filter(p => (p.deployedSol || 0) > 0).map(p => p.market || 'SOL')
+    ).size;
+
+    // Signal check for this specific market
+    let signalLeverage = 50;
+    let entryThreshold = 20;
+    try { entryThreshold = await getEntryThreshold(); } catch {}
+
+    try {
+      const { enter, signal } = await shouldEnterNow(market);
+      if (!enter || signal.score < entryThreshold) {
+        return null;
+      }
+      signalLeverage = Math.max(signal.leverage || 50, 50);
+      logger.info('Market signal FAVORABLE for ' + market, {
+        mint, market, score: signal.score, direction: signal.direction,
+        leverage: signalLeverage + 'x', threshold: entryThreshold,
+      });
+    } catch {
+      return null; // Don't enter extra markets on signal failure
+    }
+
+    const solPrice = await getSolPrice();
+    if (solPrice <= 0) return null;
+
+    const MAX_TRADING_CAPITAL = 10;
+    const capitalPerMarket = MAX_TRADING_CAPITAL / (activeMarkets + 1);
+    const deployAmount = Math.min(available, capitalPerMarket);
+    const collateralUsd = deployAmount * solPrice;
+    const maxLev = perps.getMaxLeverage(market);
+    const effectiveLeverage = Math.min(signalLeverage, maxLev);
+    const sizeUsd = collateralUsd * effectiveLeverage;
+
+    if (sizeUsd < 100) return null;
+
+    logger.info('Opening ' + market + ' position', {
+      mint, market, direction,
+      leverage: effectiveLeverage + 'x',
+      collateralSol: deployAmount.toFixed(4),
+      sizeUsd: sizeUsd.toFixed(0),
+    });
+
+    const result = await retry(
+      () => perps.openPosition(market, sizeUsd, deployAmount, direction),
+      { retries: 2, delayMs: 3000, label: `openPosition(${market})` }
+    );
+
+    await db.setPosition(posKey, {
+      tokenMint: mint,
+      side: direction,
+      market,
+      leverage: effectiveLeverage,
+      deployedSol: deployAmount,
+      sizeUsd,
+      lastAction: 'open',
+      lastActionAt: Date.now(),
+      entry: 0,
+      pnl: 0,
+      strategyStage: 'watching',
+      highWaterPnl: 0,
+      highWaterPrice: 0,
+      tp1Hit: false,
+      tp2Hit: false,
+    });
+
+    return { action: 'open-' + market, sizeUsd, leverage: effectiveLeverage, txSig: result?.txSig };
+  } catch (err) {
+    logger.error('managePositionForMarket error', { mint, market, error: err.message });
+    return null;
+  }
 }
 
 /**

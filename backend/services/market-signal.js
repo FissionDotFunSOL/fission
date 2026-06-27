@@ -22,12 +22,27 @@ import logger from '../utils/logger.js';
 const BINANCE_API = 'https://api.binance.com/api/v3';
 const BINANCE_FAPI = 'https://fapi.binance.com/fapi/v1';
 
-// Caches
-let cache1m = { data: null, at: 0 };
-let cache15m = { data: null, at: 0 };
-let cache1h = { data: null, at: 0 };
-let cacheFunding = { data: null, at: 0 };
-let cacheOI = { data: null, at: 0 };
+// Binance symbol mapping
+const BINANCE_SYMBOLS = {
+  SOL: 'SOLUSDT',
+  BTC: 'BTCUSDT',
+  ETH: 'ETHUSDT',
+};
+
+// Per-market caches
+const caches = {};
+function getCache(market) {
+  if (!caches[market]) {
+    caches[market] = {
+      c1m: { data: null, at: 0 },
+      c15m: { data: null, at: 0 },
+      c1h: { data: null, at: 0 },
+      funding: { data: null, at: 0 },
+      oi: { data: null, at: 0 },
+    };
+  }
+  return caches[market];
+}
 const CACHE_TTL = 30_000;
 
 // ---------------------------------------------------------------------------
@@ -48,41 +63,43 @@ async function fetchKlines(symbol, interval, limit, cache) {
     cache.at = Date.now();
     return candles;
   } catch (e) {
-    logger.warn('Kline fetch failed', { interval, error: e.message });
+    logger.warn('Kline fetch failed', { symbol, interval, error: e.message });
     return cache.data || [];
   }
 }
 
-async function getCandles1m() { return fetchKlines('SOLUSDT', '1m', 100, cache1m); }
-async function getCandles15m() { return fetchKlines('SOLUSDT', '15m', 50, cache15m); }
-async function getCandles1h() { return fetchKlines('SOLUSDT', '1h', 210, cache1h); }
+function getCandles1m(market = 'SOL') { const c = getCache(market); return fetchKlines(BINANCE_SYMBOLS[market] || 'SOLUSDT', '1m', 100, c.c1m); }
+function getCandles15m(market = 'SOL') { const c = getCache(market); return fetchKlines(BINANCE_SYMBOLS[market] || 'SOLUSDT', '15m', 50, c.c15m); }
+function getCandles1h(market = 'SOL') { const c = getCache(market); return fetchKlines(BINANCE_SYMBOLS[market] || 'SOLUSDT', '1h', 210, c.c1h); }
 
-async function getFundingRate() {
-  if (cacheFunding.data !== null && Date.now() - cacheFunding.at < 60_000) return cacheFunding.data;
+async function getFundingRate(market = 'SOL') {
+  const c = getCache(market);
+  if (c.funding.data !== null && Date.now() - c.funding.at < 60_000) return c.funding.data;
   try {
-    const r = await fetch(`${BINANCE_FAPI}/fundingRate?symbol=SOLUSDT&limit=1`);
-    if (!r.ok) return cacheFunding.data || 0;
+    const sym = BINANCE_SYMBOLS[market] || 'SOLUSDT';
+    const r = await fetch(`${BINANCE_FAPI}/fundingRate?symbol=${sym}&limit=1`);
+    if (!r.ok) return c.funding.data || 0;
     const d = await r.json();
     const rate = parseFloat(d[0]?.fundingRate) || 0;
-    cacheFunding = { data: rate, at: Date.now() };
+    c.funding = { data: rate, at: Date.now() };
     return rate;
   } catch {
-    return cacheFunding.data || 0;
+    return c.funding.data || 0;
   }
 }
 
-async function getOpenInterest() {
-  if (cacheOI.data !== null && Date.now() - cacheOI.at < 60_000) return cacheOI.data;
+async function getOpenInterest(market = 'SOL') {
+  const c = getCache(market);
+  if (c.oi.data !== null && Date.now() - c.oi.at < 60_000) return c.oi.data;
   try {
-    const r = await fetch(`${BINANCE_FAPI}/openInterest?symbol=SOLUSDT`);
-    if (!r.ok) return cacheOI.data || 0;
+    const sym = BINANCE_SYMBOLS[market] || 'SOLUSDT';
+    const r = await fetch(`${BINANCE_FAPI}/openInterest?symbol=${sym}`);
+    if (!r.ok) return c.oi.data || 0;
     const d = await r.json();
     const oi = parseFloat(d.openInterest) || 0;
-    cacheOI = { data: oi, at: Date.now() };
+    c.oi = { data: oi, at: Date.now() };
     return oi;
-  } catch {
-    return cacheOI.data || 0;
-  }
+  } catch { return c.oi.data || 0; }
 }
 
 // ---------------------------------------------------------------------------
@@ -191,17 +208,17 @@ function volumeScore(candles) {
  *
  * @returns {{ score, direction, confidence, leverage, details }}
  */
-export async function getMarketSignal() {
+export async function getMarketSignal(market = 'SOL') {
   try {
     const [c1m, c15m, c1h, funding] = await Promise.all([
-      getCandles1m(),
-      getCandles15m(),
-      getCandles1h(),
-      getFundingRate(),
+      getCandles1m(market),
+      getCandles15m(market),
+      getCandles1h(market),
+      getFundingRate(market),
     ]);
 
-    if (c1m.length < 30) {
-      return { score: 0, direction: 'wait', confidence: 0, leverage: 30, details: { error: 'insufficient data' } };
+    if (c1m.length < 50 || c15m.length < 10) {
+      return { score: 0, direction: 'wait', confidence: 0, leverage: 50, details: { error: 'insufficient data' }, market };
     }
 
     const closes1m = c1m.map(c => c.close);
@@ -326,15 +343,15 @@ export async function getMarketSignal() {
     };
 
     logger.info('Market signal v2', {
-      score, direction, confidence, leverage,
+      market, score, direction, confidence, leverage,
       price: price.toFixed(2), rsi: rsiVal.toFixed(1),
       funding: (funding * 100).toFixed(4) + '%', session,
     });
 
-    return { score, direction, confidence, leverage, details };
+    return { score, direction, confidence, leverage, details, market };
   } catch (err) {
-    logger.error('Market signal error', { error: err.message });
-    return { score: 0, direction: 'wait', confidence: 0, leverage: 30, details: { error: err.message } };
+    logger.error('Market signal error', { market, error: err.message });
+    return { score: 0, direction: 'wait', confidence: 0, leverage: 50, details: { error: err.message }, market };
   }
 }
 
@@ -342,8 +359,8 @@ export async function getMarketSignal() {
  * Check if we should enter a position right now.
  * Returns entry decision + recommended leverage.
  */
-export async function shouldEnterNow() {
-  const signal = await getMarketSignal();
+export async function shouldEnterNow(market = 'SOL') {
+  const signal = await getMarketSignal(market);
 
   // Only enter on strong conviction (score >= 25)
   if (signal.direction === 'long' && signal.score >= 25) {
@@ -360,8 +377,8 @@ export async function shouldEnterNow() {
  * @param {'long'|'short'} positionSide - current position direction
  * @returns {{ shouldExit: boolean, reason: string, signal: object }}
  */
-export async function shouldExitNow(positionSide = 'long') {
-  const signal = await getMarketSignal();
+export async function shouldExitNow(positionSide = 'long', market = 'SOL') {
+  const signal = await getMarketSignal(market);
 
   // For longs: exit if signal goes strongly negative (momentum reversal)
   if (positionSide === 'long') {
