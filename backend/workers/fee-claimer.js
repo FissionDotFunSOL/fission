@@ -1,88 +1,97 @@
 import logger from '../utils/logger.js';
 import config from '../config.js';
 import { getAllTokens } from '../db/firebase.js';
-import { claimFees } from '../services/pumpfun.js';
+import { buildClaimFeesIx } from '../services/pumpfun.js';
+import { sendTx } from '../services/solana.js';
 import { getSolBalance } from '../services/solana.js';
-import { lamportsToSol } from '../utils/helpers.js';
 import * as db from '../db/firebase.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 
 /**
  * Run a fee-claiming cycle for a single token.
  *
- * 1. Claims fees via Pump.fun distribute instruction.
- * 2. Checks the protocol wallet SOL balance delta.
- * 3. Splits the claimed amount 70/30 (perps / FISSION buyback).
- * 4. Records the run + split in Firestore.
- *
- * @param {string} mint — token mint address
- * @returns {{ runId: string, feesClaimed: number, split: object } | null}
+ * 1. Checks if there are distributable fees (avoids wasting SOL on empty claims).
+ * 2. Claims fees via Pump.fun distribute instruction.
+ * 3. Measures the actual SOL received from the tx.
+ * 4. Splits the claimed amount 70/30 (perps / FISSION buyback).
+ * 5. Records the run + split in Firestore.
  */
 export async function claimFeesForToken(mint) {
   logger.info('Starting fee claim', { mint });
 
   try {
+    // Check if there are actually fees to distribute before sending a tx
+    try {
+      const { createRequire } = await import('module');
+      const require = createRequire(import.meta.url);
+      const sdk = require('@pump-fun/pump-sdk');
+      const conn = new Connection(config.SOLANA_RPC_URL, 'confirmed');
+      const pump = new sdk.OnlinePumpSdk(conn);
+      const mintPk = new PublicKey(mint);
 
-    // Execute claim
-    const txSig = await claimFees(mint);
-    if (!txSig) {
-      logger.info('No fees to claim', { mint });
+      const feeInfo = await pump.getMinimumDistributableFee(mintPk);
+      const distributable = feeInfo?.distributableFees?.toNumber?.() || 0;
+
+      if (distributable === 0) {
+        logger.debug('No distributable fees, skipping', { mint });
+        return null;
+      }
+
+      logger.info('Distributable fees found', {
+        mint,
+        distributableLamports: distributable,
+        distributableSol: (distributable / 1e9).toFixed(6),
+      });
+    } catch (checkErr) {
+      // If check fails, proceed with claim anyway (might still work)
+      logger.debug('Fee check failed, proceeding with claim attempt', {
+        mint,
+        error: checkErr.message,
+      });
+    }
+
+    // Build and send the claim transaction
+    const { instructions, method } = await buildClaimFeesIx(mint);
+
+    if (!instructions || instructions.length === 0) {
+      logger.debug('No claim instructions', { mint });
       return null;
     }
 
-    // Wait for confirmation
-    let feesClaimed = 0;
-    try {
-      const { Connection } = await import('@solana/web3.js');
-      const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
+    // Get balance before
+    const conn = new Connection(config.SOLANA_RPC_URL, 'confirmed');
+    const balBefore = await conn.getBalance(config.PROTOCOL_PUBKEY);
 
-      // Wait for confirmation
-      await new Promise((r) => setTimeout(r, 3000));
+    const txSig = await sendTx(instructions, [config.protocolKeypair]);
 
-      // Read the actual SOL delta from the confirmed transaction
-      const txInfo = await conn.getTransaction(txSig, {
-        commitment: 'confirmed',
-        maxSupportedTransactionVersion: 0,
-      });
+    // Wait for confirmation and measure delta
+    await new Promise((r) => setTimeout(r, 3000));
 
-      if (txInfo && txInfo.meta && !txInfo.meta.err) {
-        const accounts = txInfo.transaction.message.staticAccountKeys || txInfo.transaction.message.accountKeys;
-        const protocolKey = config.PROTOCOL_PUBKEY.toBase58();
+    const balAfter = await conn.getBalance(config.PROTOCOL_PUBKEY);
+    const deltaLamports = balAfter - balBefore;
+    // delta > 0 means we received SOL (fees claimed minus tx fee)
+    // delta < 0 means only tx fee was paid (no fees claimed)
+    const feesClaimed = deltaLamports > 0 ? deltaLamports / 1e9 : 0;
 
-        for (let i = 0; i < accounts.length; i++) {
-          const pubkey = typeof accounts[i] === 'string' ? accounts[i] : accounts[i].toBase58();
-          if (pubkey === protocolKey) {
-            const pre = txInfo.meta.preBalances[i] || 0;
-            const post = txInfo.meta.postBalances[i] || 0;
-            const delta = (post - pre) / 1e9;
-            // delta is negative if only tx fee was paid, positive if fees were received
-            // We want the gross received amount (ignore tx fee which is tiny)
-            if (delta > 0) {
-              feesClaimed = delta;
-            } else {
-              // Net negative means only tx fee was deducted, actual claim was 0
-              feesClaimed = 0;
-            }
-            break;
-          }
-        }
-      }
+    logger.info('Fee claim tx confirmed', {
+      mint,
+      method,
+      txSig,
+      feesClaimed: feesClaimed.toFixed(6),
+      balBefore: (balBefore / 1e9).toFixed(4),
+      balAfter: (balAfter / 1e9).toFixed(4),
+    });
 
-      logger.info('Transaction confirmed, measured fee delta', {
-        mint,
-        txSig,
-        feesClaimed: feesClaimed.toFixed(6),
-      });
-    } catch (confirmErr) {
-      logger.warn('Transaction measurement failed, checking balance directly', { error: confirmErr.message });
-      // Fallback: check current balance and estimate
-      const currentBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
-      logger.info('Current wallet balance (fallback)', { balance: currentBalance.toFixed(4) });
+    // Only record if we actually received fees
+    if (feesClaimed <= 0) {
+      logger.info('Claim tx sent but 0 fees received', { mint, txSig });
+      return null;
     }
 
-    // Compute split
+    // Compute split (70% perps, 30% buyback)
     const split = {
       positionAmount: feesClaimed * config.FEE_SPLIT.positionFund,
-      buybackAmount:  feesClaimed * config.FEE_SPLIT.buyback,
+      buybackAmount: feesClaimed * config.FEE_SPLIT.buyback,
     };
 
     // Persist run
