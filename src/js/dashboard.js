@@ -126,7 +126,16 @@ function renderSkeleton() {
 }
 
 function filterAndSort(data) {
-  let filtered = data;
+  // Only show tokens with real activity (position, entry, PnL, or recent action)
+  let filtered = data.filter(d =>
+    d.entry > 0 || d.pnl !== 0 || d.deployedSol > 0 || d.sizeUsd > 0 ||
+    (d.lastAction && d.lastAction !== '--')
+  );
+
+  // If no tokens have activity, show the first one (FISSION) as placeholder
+  if (filtered.length === 0 && data.length > 0) {
+    filtered = [data[0]];
+  }
 
   if (searchQuery) {
     filtered = filtered.filter(d =>
