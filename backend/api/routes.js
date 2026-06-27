@@ -10,6 +10,7 @@ router.get('/health', ctrl.healthCheck);
 router.get('/tokens',          ctrl.listTokens);
 router.get('/tokens/:mint',    ctrl.getToken);
 router.post('/tokens/register', ctrl.registerToken);
+router.post('/tokens/:mint/refresh-metadata', ctrl.refreshTokenMetadata);
 
 // Positions
 router.get('/positions',       ctrl.listPositions);

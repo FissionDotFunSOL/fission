@@ -65,6 +65,34 @@ export async function getToken(req, res) {
   }
 }
 
+export async function refreshTokenMetadata(req, res) {
+  try {
+    const { mint } = req.params;
+    const token = await db.getToken(mint);
+    if (!token) return res.status(404).json({ error: 'Token not found' });
+
+    const pumpRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`);
+    if (!pumpRes.ok) {
+      return res.status(502).json({ error: 'Pump.fun API failed', status: pumpRes.status });
+    }
+
+    const pumpData = await pumpRes.json();
+    const updates = {
+      name: pumpData.name || token.name,
+      symbol: pumpData.symbol || token.symbol,
+      image: pumpData.image_uri || token.image,
+    };
+
+    await db.setToken(mint, { ...token, ...updates });
+    logger.info('Token metadata refreshed', { mint, ...updates });
+
+    res.json({ token: { ...token, ...updates } });
+  } catch (err) {
+    logger.error('refreshTokenMetadata error', { error: err.message });
+    res.status(500).json({ error: 'Failed to refresh metadata' });
+  }
+}
+
 /**
  * POST /api/v1/tokens/register
  * Body: { mint, underlying? }
