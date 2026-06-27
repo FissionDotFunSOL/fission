@@ -52,7 +52,7 @@ const RISK = {
   earlyTakeProfitPct:   parseFloat(process.env.EARLY_TAKE_PROFIT_PCT) || 0.20,
   takeProfitReducePct:  parseFloat(process.env.TAKE_PROFIT_REDUCE_PCT) || 0.30,
   drawdownReducePct:    parseFloat(process.env.DRAWDOWN_REDUCE_PCT) || 0.25,
-  minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.005,
+  minDeploySol:         parseFloat(process.env.MIN_DEPLOY_SOL) || 0.5,
   maxPositionSol:       parseFloat(process.env.MAX_POSITION_SOL) || 999999,
   liquidationWarningPct: parseFloat(process.env.LIQUIDATION_WARNING_PCT) || 0.05,
   // Minimum SOL to always keep in the wallet for gas/transaction fees
