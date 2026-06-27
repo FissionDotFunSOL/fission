@@ -348,17 +348,21 @@ export async function getStats(_req, res) {
       db.getAllBuybacks(),
     ]);
 
-    // Get correction offset for claims made outside the worker (e.g. manual CLI claims)
-    let feesOffset = 0;
+    // Get correction offsets for manual operations done outside workers
+    let feesOffset = 0, pnlOffset = 0, buybackSolOffset = 0, buybackCountOffset = 0;
     try {
       const statsConfig = await db.getDoc('config', 'stats');
       feesOffset = statsConfig?.feesClaimedOffset || 0;
+      pnlOffset = statsConfig?.perpPnlOffset || 0;
+      buybackSolOffset = statsConfig?.buybackSolOffset || 0;
+      buybackCountOffset = statsConfig?.buybackCountOffset || 0;
     } catch {}
 
     const totalFeesClaimed = runs.reduce((sum, r) => sum + (r.feesClaimed || 0), 0) + feesOffset;
-    const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0);
+    const totalBuybackSol  = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0) + buybackSolOffset;
     const totalBurned      = buybacks.reduce((sum, b) => sum + (b.tokensBurned || 0), 0);
-    const totalPnl         = positions.reduce((sum, p) => sum + (p.pnl || 0), 0);
+    const totalPnl         = positions.reduce((sum, p) => sum + (p.pnl || 0), 0) + pnlOffset;
+    const totalBuybacks    = buybacks.length + buybackCountOffset;
 
     res.json({
       stats: {
@@ -370,6 +374,7 @@ export async function getStats(_req, res) {
         totalPnl,
         totalBuybackSol,
         totalBurned,
+        totalBuybacks,
         uptime: process.uptime(),
       },
     });
