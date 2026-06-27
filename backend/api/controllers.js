@@ -22,30 +22,6 @@ export async function healthCheck(_req, res) {
 export async function listTokens(_req, res) {
   try {
     const tokens = await db.getAllTokens();
-
-    // Auto-enrich tokens that still have CA prefix as name
-    for (const t of tokens) {
-      const mint = t.mint || t.id;
-      const nameIsMissing = !t.name || t.name === mint?.slice(0, 8);
-      if (mint && nameIsMissing) {
-        try {
-          const pumpRes = await fetch(`https://frontend-api-v3.pump.fun/coins/${mint}`);
-          if (pumpRes.ok) {
-            const pumpData = await pumpRes.json();
-            if (pumpData?.name) {
-              t.name = pumpData.name;
-              t.symbol = pumpData.symbol || t.symbol;
-              t.image = pumpData.image_uri || t.image;
-              // Persist only the metadata fields
-              await db.updateDoc('tokens', mint, { name: t.name, symbol: t.symbol, image: t.image });
-            }
-          }
-        } catch {
-          // Non-critical, continue with existing data
-        }
-      }
-    }
-
     res.json({ tokens });
   } catch (err) {
     logger.error('listTokens error', { error: err.message });
