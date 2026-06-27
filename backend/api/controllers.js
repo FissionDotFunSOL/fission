@@ -430,11 +430,20 @@ export async function getStats(_req, res) {
     const totalFeesClaimed = feesOffset + newFees;
 
     // Perp stats: historical baseline + DB position records
+    // deployed offset includes SOL currently in open positions
+    // So closed PnL = returned - (deployed - currently_deployed)
+    // Total PnL = closed PnL + unrealized PnL from live position
     const dbDeployed = positions.reduce((sum, p) => sum + (p.deployedSol || 0), 0);
     const dbReturned = positions.reduce((sum, p) => sum + (p.returnedSol || 0), 0);
     const perpSolDeployed = perpDeployedOffset + dbDeployed;
     const perpSolReturned = perpReturnedOffset + dbReturned;
-    const netPerpPnl = perpSolReturned - perpSolDeployed;
+
+    // Closed trades PnL = returned - (deployed - still_in_positions)
+    const currentlyDeployed = positions.reduce((sum, p) => sum + ((p.deployedSol || 0) > 0 ? (p.deployedSol || 0) : 0), 0);
+    const closedPnl = perpSolReturned - (perpSolDeployed - currentlyDeployed);
+
+    // Unrealized PnL from live Jupiter position (converted to SOL)
+    let unrealizedPnlSol = 0;
 
     // Get wallet SOL balance
     let walletBalance = 0;
@@ -453,10 +462,15 @@ export async function getStats(_req, res) {
         const jupData = await jupResp.json();
         for (const p of (jupData.dataList || [])) {
           livePositionPnlUsd += parseFloat(p.pnlAfterFeesUsd) || 0;
+          const markPrice = parseFloat(p.markPrice) || 72;
+          unrealizedPnlSol += markPrice > 0 ? livePositionPnlUsd / markPrice : 0;
           hasLivePosition = true;
         }
       }
     } catch {}
+
+    // Total perp PnL = closed trades + unrealized
+    const netPerpPnl = closedPnl + unrealizedPnlSol;
 
     const totalBuybackSol = buybacks.reduce((sum, b) => sum + (b.amountSol || 0), 0);
 
