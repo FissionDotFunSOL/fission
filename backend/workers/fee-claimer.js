@@ -21,7 +21,7 @@ export async function claimFeesForToken(mint) {
   logger.info('Starting fee claim', { mint });
 
   try {
-    // Check claimable balance — skip if under 0.5 SOL
+    // Check claimable balance — skip if under 0.01 SOL (not worth the tx fee)
     try {
       const token = await db.getToken(mint);
       if (token?.sharingConfigPDA) {
@@ -29,8 +29,8 @@ export async function claimFeesForToken(mint) {
         const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
         const pdaBalance = await conn.getBalance(new PublicKey(token.sharingConfigPDA));
         const pdaSol = pdaBalance / 1e9;
-        if (pdaSol < 0.5) {
-          logger.info('Below 0.5 SOL threshold, skipping', { mint, balance: pdaSol.toFixed(4) });
+        if (pdaSol < 0.01) {
+          logger.info('Below 0.01 SOL threshold, skipping', { mint, balance: pdaSol.toFixed(6) });
           return null;
         }
       }
