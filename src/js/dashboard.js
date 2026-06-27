@@ -185,7 +185,7 @@ function renderTable() {
     const isLong = row.side === 'long';
     const dirArrow = isLong ? '▲' : '▼';
     const dirColor = isLong ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
-    const dirText = isLong ? 'LONG' : 'SHORT';
+    const dirText = isLong ? 'LONG' : '\u2193';
     const hasPosition = row.entry > 0 || row.sizeUsd > 0;
     const pnlColor = row.pnl >= 0 ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
     const pnlSign = row.pnl >= 0 ? '+' : '';
@@ -257,7 +257,7 @@ function openTokenModal(token) {
 
   const dirText = document.getElementById('modal-direction-text');
   if (dirText) {
-    dirText.textContent = isLong ? 'LONG' : 'SHORT';
+    dirText.textContent = isLong ? 'LONG' : '\u2193';
     dirText.style.color = isLong ? 'var(--green, #00ff88)' : 'var(--red, #ff3366)';
   }
 
