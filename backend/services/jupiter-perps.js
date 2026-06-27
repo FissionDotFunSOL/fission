@@ -323,18 +323,30 @@ export async function openPosition(market, sizeUsd, collateralSol, side = 'long'
       quoteSize: data.quote?.positionSizeUsd,
     });
 
-    // Sign and send the pre-built transaction
-    const conn = getConnection();
+    // Sign and submit via Jupiter's transaction execute endpoint
+    // (direct RPC sends expire before landing; Jupiter's infra is faster)
     const txBuf = Buffer.from(data.serializedTxBase64, 'base64');
     const tx = VersionedTransaction.deserialize(txBuf);
     tx.sign([config.protocolKeypair]);
+    const signedBase64 = Buffer.from(tx.serialize()).toString('base64');
 
-    const sig = await conn.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true,
-      maxRetries: 5,
+    const execResp = await fetch('https://perps-api.jup.ag/v1/transaction/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'increase-position',
+        serializedTxBase64: signedBase64,
+      }),
     });
+    const execData = await execResp.json();
 
-    logger.info('Position request submitted via v2 API', {
+    if (!execData.txid) {
+      logger.error('Jupiter execute failed', { market, side, error: JSON.stringify(execData) });
+      throw new Error('Jupiter execute failed: ' + (execData.message || JSON.stringify(execData)));
+    }
+
+    const sig = execData.txid;
+    logger.info('Position submitted via Jupiter execute', {
       market, side, leverage: leverage + 'x', txSig: sig,
     });
 
@@ -401,16 +413,22 @@ export async function closePosition(market) {
       throw new Error('Jupiter close API failed: ' + (closeData.message || 'no transaction'));
     }
 
-    const conn = getConnection();
     const txBuf = Buffer.from(closeData.serializedTxBase64, 'base64');
     const tx = VersionedTransaction.deserialize(txBuf);
     tx.sign([config.protocolKeypair]);
+    const signedBase64 = Buffer.from(tx.serialize()).toString('base64');
 
-    const sig = await conn.sendRawTransaction(tx.serialize(), {
-      skipPreflight: true,
-      maxRetries: 5,
+    const execResp = await fetch('https://perps-api.jup.ag/v1/transaction/execute', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'decrease-position',
+        serializedTxBase64: signedBase64,
+      }),
     });
+    const execData = await execResp.json();
 
+    const sig = execData.txid || 'unknown';
     logger.info('Jupiter Perps: close request submitted', { market, txSig: sig });
     return { txSig: sig };
   } catch (err) {
