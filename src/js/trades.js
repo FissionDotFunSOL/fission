@@ -5,11 +5,81 @@
 
 export function initTradeHistory() {
   const tbody = document.getElementById('trade-history-body');
-  if (!tbody) return;
+  const posGrid = document.getElementById('open-positions-grid');
 
-  loadTrades(tbody);
-  // Refresh every 30s
-  setInterval(() => loadTrades(tbody), 30_000);
+  if (tbody) {
+    loadTrades(tbody);
+    setInterval(() => loadTrades(tbody), 30_000);
+  }
+
+  if (posGrid) {
+    loadPositions(posGrid);
+    setInterval(() => loadPositions(posGrid), 10_000);
+  }
+}
+
+async function loadPositions(grid) {
+  try {
+    const resp = await fetch('/api/v1/positions/live');
+    if (!resp.ok) throw new Error('API error');
+    const { positions } = await resp.json();
+
+    if (!positions || positions.length === 0) {
+      grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8rem;border:1px solid rgba(255,255,255,0.06);border-radius:12px;">No open positions</div>';
+      return;
+    }
+
+    grid.innerHTML = positions.map(p => {
+      const pnl = p.unrealisedPnl || 0;
+      const pnlColor = pnl >= 0 ? '#4ade80' : '#f87171';
+      const pnlSign = pnl >= 0 ? '+' : '';
+      const pnlPct = p.entryPrice > 0
+        ? ((p.currentPrice - p.entryPrice) / p.entryPrice * 100 * (p.side === 'short' ? -1 : 1)).toFixed(2)
+        : '0.00';
+      const pnlPctColor = parseFloat(pnlPct) >= 0 ? '#4ade80' : '#f87171';
+      const borderGlow = pnl >= 0 ? 'rgba(0,255,170,0.2)' : 'rgba(255,80,80,0.2)';
+
+      return `<div style="
+        background:rgba(255,255,255,0.02);
+        border:1px solid ${borderGlow};
+        border-radius:12px;
+        padding:20px;
+        font-family:var(--font-mono);
+      ">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div>
+            <span style="font-size:1rem;font-weight:700;color:var(--text-primary);">${p.market}</span>
+            <span style="font-size:0.65rem;color:${p.side === 'long' ? '#4ade80' : '#f87171'};text-transform:uppercase;margin-left:6px;padding:2px 6px;border-radius:4px;background:${p.side === 'long' ? 'rgba(74,222,128,0.1)' : 'rgba(248,113,113,0.1)'};">${p.side} ${p.leverage}x</span>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:1.1rem;font-weight:700;color:${pnlColor};">${pnlSign}$${Math.abs(pnl).toFixed(2)}</div>
+            <div style="font-size:0.65rem;color:${pnlPctColor};">${pnlPct}%</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.7rem;">
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">SIZE</div>
+            <div style="color:var(--text-primary);">$${p.sizeUsd.toFixed(2)}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">COLLATERAL</div>
+            <div style="color:var(--text-primary);">$${p.collateralUsd.toFixed(2)}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">ENTRY</div>
+            <div style="color:var(--text-primary);">$${p.entryPrice.toFixed(2)}</div>
+          </div>
+          <div>
+            <div style="color:var(--text-muted);font-size:0.6rem;margin-bottom:2px;">MARK</div>
+            <div style="color:var(--text-primary);">$${p.currentPrice.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+
+  } catch (err) {
+    grid.innerHTML = '<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8rem;">Failed to load positions</div>';
+  }
 }
 
 async function loadTrades(tbody) {

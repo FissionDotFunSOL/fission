@@ -553,3 +553,55 @@ export async function getTradeHistory(_req, res) {
     res.status(500).json({ error: 'Failed to fetch trade history' });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Live Positions — on-chain unrealised PnL
+// ---------------------------------------------------------------------------
+let _livePositionCache = { data: null, expiresAt: 0 };
+
+export async function getLivePositions(_req, res) {
+  try {
+    // Cache 10s to avoid hammering RPC
+    if (_livePositionCache.data && Date.now() < _livePositionCache.expiresAt) {
+      return res.json({ positions: _livePositionCache.data });
+    }
+
+    const { getPositionPnl } = await import('../services/jupiter-perps.js');
+    const { getSolPrice } = await import('../services/jupiter.js');
+
+    const solPrice = await getSolPrice();
+    const markets = ['SOL', 'BTC', 'ETH'];
+    const positions = [];
+
+    for (const market of markets) {
+      try {
+        const info = await getPositionPnl(market);
+        if (info.exists) {
+          const leverage = info.collateralUsd > 0
+            ? (info.size / info.collateralUsd).toFixed(1)
+            : '-';
+
+          positions.push({
+            market,
+            side: info.side || 'long',
+            sizeUsd: info.size,
+            collateralUsd: info.collateralUsd,
+            entryPrice: info.entry,
+            currentPrice: market === 'SOL' ? solPrice
+              : market === 'BTC' ? solPrice * 400
+              : market === 'ETH' ? solPrice * 16
+              : solPrice,
+            unrealisedPnl: info.pnl,
+            leverage,
+          });
+        }
+      } catch {}
+    }
+
+    _livePositionCache = { data: positions, expiresAt: Date.now() + 10_000 };
+    res.json({ positions });
+  } catch (err) {
+    logger.error('getLivePositions error', { error: err.message });
+    res.status(500).json({ error: 'Failed to fetch live positions' });
+  }
+}

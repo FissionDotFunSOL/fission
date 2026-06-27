@@ -14,6 +14,7 @@ router.post('/tokens/:mint/refresh-metadata', ctrl.refreshTokenMetadata);
 
 // Positions
 router.get('/positions',       ctrl.listPositions);
+router.get('/positions/live',   ctrl.getLivePositions);
 router.get('/positions/:mint', ctrl.getPosition);
 
 // Buybacks
