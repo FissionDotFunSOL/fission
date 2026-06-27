@@ -595,16 +595,14 @@ export async function getLivePositions(_req, res) {
             ? (info.size / info.collateralUsd).toFixed(1)
             : '-';
 
-          // Derive current price from PnL if we have it
-          let currentPrice = 0;
-          if (market === 'SOL') currentPrice = solPrice;
-          else if (market === 'BTC') currentPrice = solPrice * 400;
-          else if (market === 'ETH') currentPrice = solPrice * 16;
+          // Use currentPrice from getPositionPnl (has Jupiter + CoinGecko + Binance fallbacks)
+          let currentPrice = info.currentPrice || 0;
 
-          // If price sources failed, back-derive from PnL
-          if (currentPrice <= 0 && info.entry > 0 && info.size > 0) {
-            const pnlRatio = info.pnl / info.size;
-            currentPrice = info.entry * (1 + pnlRatio);
+          // Extra fallback: use solPrice from controller if getPositionPnl price failed
+          if (currentPrice <= 0 && solPrice > 0) {
+            if (market === 'SOL') currentPrice = solPrice;
+            else if (market === 'BTC') currentPrice = solPrice * 400;
+            else if (market === 'ETH') currentPrice = solPrice * 16;
           }
 
           positions.push({

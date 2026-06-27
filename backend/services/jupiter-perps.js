@@ -193,12 +193,13 @@ export async function getPositionPnl(market) {
     const collateralUsd = Number(collateralRaw) / 1e6;
 
     let pnl = 0;
+    let currentPrice = 0;
     try {
       let solPrice = 0;
       try {
         solPrice = await getSolPrice();
       } catch {
-        // Jupiter rate-limited, try CoinGecko as fallback
+        // Jupiter rate-limited
       }
 
       if (!solPrice || solPrice <= 0) {
@@ -208,12 +209,21 @@ export async function getPositionPnl(market) {
             const cgData = await cgRes.json();
             solPrice = cgData?.solana?.usd || 0;
           }
-        } catch {
-          // Both price sources failed
-        }
+        } catch {}
       }
 
-      const currentPrice = market === 'SOL' ? solPrice
+      // Third fallback: Binance public API
+      if (!solPrice || solPrice <= 0) {
+        try {
+          const bnRes = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDT');
+          if (bnRes.ok) {
+            const bnData = await bnRes.json();
+            solPrice = parseFloat(bnData?.price) || 0;
+          }
+        } catch {}
+      }
+
+      currentPrice = market === 'SOL' ? solPrice
         : market === 'BTC' ? solPrice * 400
         : market === 'ETH' ? solPrice * 16
         : solPrice;
@@ -230,7 +240,7 @@ export async function getPositionPnl(market) {
     }
 
     const sideFromData = data[152] === 2 ? 'short' : 'long';
-    return { exists: true, pnl, size: sizeUsd, entry, collateralUsd, side: sideFromData };
+    return { exists: true, pnl, size: sizeUsd, entry, collateralUsd, side: sideFromData, currentPrice };
   } catch (err) {
     logger.error('getPositionPnl error', { market, error: err.message });
     return { exists: false, pnl: 0, size: 0, entry: 0, error: err.message };
