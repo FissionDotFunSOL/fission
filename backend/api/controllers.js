@@ -36,8 +36,8 @@ export async function listTokens(_req, res) {
               t.name = pumpData.name;
               t.symbol = pumpData.symbol || t.symbol;
               t.image = pumpData.image_uri || t.image;
-              // Persist the fix so we don't re-fetch every time
-              await db.setToken(mint, { ...t, name: t.name, symbol: t.symbol, image: t.image });
+              // Persist only the metadata fields
+              await db.updateDoc('tokens', mint, { name: t.name, symbol: t.symbol, image: t.image });
             }
           }
         } catch {
