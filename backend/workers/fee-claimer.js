@@ -21,31 +21,6 @@ export async function claimFeesForToken(mint) {
   logger.info('Starting fee claim', { mint });
 
   try {
-    // Check creator vault balance — skip if under 0.001 SOL (not worth the tx fee)
-    // Fees accumulate in the creator vault PDA, NOT the sharing config PDA
-    try {
-      const { Connection, PublicKey } = await import('@solana/web3.js');
-      const conn = new Connection(config.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', 'confirmed');
-      const mintPk = new PublicKey(mint);
-
-      // Creator vault PDA: seeds = ['creator-vault', mint], program = pump fee program
-      const PUMP_FEE_PID = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
-      const [creatorVault] = PublicKey.findProgramAddressSync(
-        [Buffer.from('creator-vault'), mintPk.toBuffer()],
-        PUMP_FEE_PID
-      );
-      const vaultBalance = await conn.getBalance(creatorVault);
-      const vaultSol = vaultBalance / 1e9;
-
-      if (vaultSol < 0.001) {
-        logger.debug('Creator vault empty, skipping claim', { mint, vaultBalance: vaultSol.toFixed(6) });
-        return null;
-      }
-
-      logger.info('Creator vault has claimable fees', { mint, vaultBalance: vaultSol.toFixed(6) });
-    } catch (balErr) {
-      logger.warn('Vault balance check failed (proceeding anyway)', { error: balErr.message });
-    }
 
     // Execute claim
     const txSig = await claimFees(mint);

@@ -186,28 +186,36 @@ export async function verifySharingConfig(mint) {
 }
 
 // ---------------------------------------------------------------------------
-// Build distribute creator fees instruction (permissionless)
+// Build collect creator fees instructions
+// Uses collectCoinCreatorFeeInstructions (V1) which works for all tokens.
+// The old buildDistributeCreatorFeesInstructions only works for tokens with
+// sharing configs, which none of our tokens have.
 // ---------------------------------------------------------------------------
-export async function buildDistributeFeesIx(mint) {
+export async function buildCollectFeesIx(mint) {
   const mintPk = typeof mint === 'string' ? new PublicKey(mint) : mint;
 
   try {
     await loadSdk();
     const conn = getConnection();
-    logger.info('Building distribute fees IX with SDK', { mint: mintPk.toBase58() });
+    logger.info('Building collect creator fees IX', { mint: mintPk.toBase58() });
     const sdk = new _OnlinePumpSdk(conn);
 
-    const instructions = await sdk.buildDistributeCreatorFeesInstructions(mintPk);
+    // V1 method: works for all tokens regardless of sharing config
+    const instructions = await sdk.collectCoinCreatorFeeInstructions(
+      mintPk,
+      config.PROTOCOL_PUBKEY
+    );
 
-    logger.info('Built distribute fees IX', {
+    const ixArray = Array.isArray(instructions) ? instructions : (instructions ? [instructions] : []);
+
+    logger.info('Built collect fees IX', {
       mint: mintPk.toBase58(),
-      ixCount: Array.isArray(instructions) ? instructions.length : (instructions ? 1 : 0),
-      hasInstructions: !!instructions,
+      ixCount: ixArray.length,
     });
 
-    return { instructions: Array.isArray(instructions) ? instructions : (instructions ? [instructions] : []) };
+    return { instructions: ixArray };
   } catch (err) {
-    logger.error('buildDistributeFeesIx failed', {
+    logger.error('buildCollectFeesIx failed', {
       mint: mintPk.toBase58(),
       error: err.message,
       stack: err.stack,
@@ -216,8 +224,11 @@ export async function buildDistributeFeesIx(mint) {
   }
 }
 
+// Keep legacy name for backwards compat
+export const buildDistributeFeesIx = buildCollectFeesIx;
+
 // ---------------------------------------------------------------------------
-// Get unclaimed creator vault balance
+// Get unclaimed creator vault balance (both programs)
 // ---------------------------------------------------------------------------
 export async function getUnclaimedBalance(mint) {
   const mintPk = typeof mint === 'string' ? new PublicKey(mint) : mint;
@@ -225,7 +236,8 @@ export async function getUnclaimedBalance(mint) {
     await loadSdk();
     const conn = getConnection();
     const sdk = new _OnlinePumpSdk(conn);
-    const balance = await sdk.getCreatorVaultBalance(mintPk);
+    // Use the combined method that checks both AMM and fee program vaults
+    const balance = await sdk.getCreatorVaultBalanceBothPrograms(mintPk);
     return balance;
   } catch (err) {
     logger.error('getUnclaimedBalance failed', { mint: mintPk.toBase58(), error: err.message });
@@ -234,36 +246,26 @@ export async function getUnclaimedBalance(mint) {
 }
 
 // ---------------------------------------------------------------------------
-// Execute fee distribution (claim)
+// Execute fee collection (claim)
 // ---------------------------------------------------------------------------
 export async function claimFees(mint) {
   const mintPk = typeof mint === 'string' ? new PublicKey(mint) : mint;
 
   if (!config.protocolKeypair) {
-    throw new Error('Protocol keypair not loaded — cannot sign transactions');
+    throw new Error('Protocol keypair not loaded -- cannot sign transactions');
   }
 
-  // Check minimum distributable fee first
-  try {
-    await loadSdk();
-    const conn = getConnection();
-    const sdk = new _OnlinePumpSdk(conn);
-    const minFee = await sdk.getMinimumDistributableFee(mintPk);
-    logger.info('Minimum distributable fee check', { mint: mintPk.toBase58(), minFee });
-  } catch (minFeeErr) {
-    logger.warn('Min fee check failed (non-critical)', { error: minFeeErr.message });
-  }
-
-  const { instructions } = await buildDistributeFeesIx(mintPk);
+  const { instructions } = await buildCollectFeesIx(mintPk);
 
   if (!instructions || instructions.length === 0) {
-    logger.info('No distribute instructions (possibly no fees to claim)', {
+    logger.info('No collect instructions (possibly no fees to claim)', {
       mint: mintPk.toBase58(),
     });
     return null;
   }
 
   const sig = await sendTx(instructions, [config.protocolKeypair]);
-  logger.info('Fees claimed', { mint: mintPk.toBase58(), signature: sig });
+  logger.info('Fees collected', { mint: mintPk.toBase58(), signature: sig });
   return sig;
 }
+
