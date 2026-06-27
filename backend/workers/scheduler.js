@@ -5,6 +5,7 @@ import { manageAllPositions } from './position-manager.js';
 import { checkProfitsAllTokens } from './position-manager.js';
 import { buybackAllTokens } from './buyback-engine.js';
 import { runRiskCheck } from './risk-manager.js';
+import { discoverNewTokens } from './token-discovery.js';
 
 // ---------------------------------------------------------------------------
 // Scheduler — orchestrates all workers with jitter + exponential backoff
@@ -49,6 +50,7 @@ export function startScheduler() {
     { name: 'position-manager',  fn: manageAllPositions,  minSec: 300,  maxSec: 480  },  // 5-8 min
     { name: 'buyback-engine',    fn: buybackAllTokens,    minSec: 900,  maxSec: 1800 },  // 15-30 min
     { name: 'risk-manager',      fn: runRiskCheck,        minSec: 300,  maxSec: 600  },  // 5-10 min
+    { name: 'token-discovery',   fn: discoverNewTokens,   minSec: 300,  maxSec: 600  },  // 5-10 min
   ];
 
   for (const w of workers) {
