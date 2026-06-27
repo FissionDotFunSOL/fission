@@ -7,310 +7,172 @@ import { getSolPrice } from '../services/jupiter.js';
 import { getSolBalance } from '../services/solana.js';
 import { retry } from '../utils/helpers.js';
 
+// ---------------------------------------------------------------------------
+// Simple high-risk strategy:
+//
+// 1. If no position exists and wallet has enough SOL -> open ONE position
+//    at the configured leverage (default 50x for SOL).
+// 2. If a position exists -> DON'T touch it. No adding, no closing, no
+//    reopening. Let it ride.
+// 3. Take profit only when PnL > $100 (configurable).
+// 4. Only manage ONE position at a time. All tokens share it.
+// ---------------------------------------------------------------------------
+
+const MIN_PROFIT_TO_TAKE = 100; // $100 minimum before taking profit
+const TARGET_LEVERAGE = 50;     // Sweet spot: high enough for $100+ on 1-2% moves, not so high it gets liquidated instantly
+
 /**
- * Manage the long position for a given token.
- *
- * Logic:
- *   1. Check if we have accumulated SOL in the position fund (from fee splits).
- *   2. If so, open or add to an existing long position on Jupiter Perps.
- *   3. Apply risk limits: reserve cash buffer, max position cap.
- *   4. Take profit if PnL exceeds configurable threshold.
- *   5. Reduce position if drawdown triggers hit.
+ * Manage the single shared position.
+ * Called for each token but only the first active token actually opens/manages.
  */
 export async function managePositionForToken(mint) {
-  logger.info('Managing position', { mint });
-
   try {
     const token = await db.getToken(mint);
-    if (!token || token.status !== 'active') {
-      logger.warn('Token not active, skipping position management', { mint });
-      return null;
-    }
+    if (!token || token.status !== 'active') return null;
 
-    // Get existing position from DB
-    let position = await db.getPosition(mint);
-
-    // Amount already deployed
-    const deployedAmount = position?.deployedSol || 0;
-
-    // Resolve market — check against all supported perps markets (Jupiter + Flash)
     const underlying = token.underlying?.toUpperCase();
     const market = underlying && config.ALL_PERPS_MARKETS.includes(underlying)
-      ? underlying
-      : null;
+      ? underlying : null;
+    if (!market) return null;
 
-    if (!market) {
-      logger.warn('No perps market available for token, skipping', { mint, underlying: token.underlying });
-      return null;
-    }
-
-    // Simple momentum check — only open long if price is trending up
-    const direction = token.side || 'long';
-    if (direction === 'long' && deployedAmount === 0) {
-      try {
-        const currentPrice = await getSolPrice();
-        // Wait 5s and check again for micro-trend
-        await new Promise(r => setTimeout(r, 5000));
-        const secondPrice = await getSolPrice();
-        if (secondPrice < currentPrice * 0.999) {
-          logger.info('Momentum check: price dipping, waiting for better entry', {
-            mint, market, priceBefore: currentPrice.toFixed(2), priceAfter: secondPrice.toFixed(2),
-          });
-          return null;
-        }
-        logger.info('Momentum check passed', {
-          mint, market, priceBefore: currentPrice.toFixed(2), priceAfter: secondPrice.toFixed(2),
-        });
-      } catch (momErr) {
-        logger.warn('Momentum check failed (proceeding)', { error: momErr.message });
-      }
-    }
-
-    // Use wallet balance directly instead of splits accounting
-    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
-    const minBalance = config.RISK.minWalletBalanceSol;
-    const totalAvailable = Math.max(0, walletBalance - minBalance);
-
-    // All tokens share the same on-chain SOL perp position.
-    // Deploy the full available balance to the position -- no need to split
-    // across tokens since there's only one on-chain position per market.
-    const availableToDeploy = Math.max(0, totalAvailable - deployedAmount);
-
-    // Check current on-chain position PnL (with retry for RPC reliability)
+    // Check live on-chain position
     const pnlInfo = await retry(
       () => perps.getPositionPnl(market),
       { retries: 2, delayMs: 2000, label: `getPositionPnl(${market})` }
     );
 
-    // -----------------------------------------------------------------------
-    // Proportional PnL: multiple tokens may share the same on-chain market.
-    // We track each token's share of the total deployed capital and allocate
-    // PnL proportionally so each token gets accurate reporting.
-    // -----------------------------------------------------------------------
-    if (pnlInfo.exists && deployedAmount > 0) {
-      // Find all tokens that share this market + side combination
-      const allPositions = await db.getAllPositions();
-      const sameMarketPositions = allPositions.filter(p =>
-        p.market === market && p.side === (token.side || 'long') && (p.deployedSol || 0) > 0
-      );
-      const totalDeployedForMarket = sameMarketPositions.reduce((sum, p) => sum + (p.deployedSol || 0), 0);
+    // -------------------------------------------------------------------
+    // CASE 1: Position exists -> monitor PnL, take profit if big enough
+    // -------------------------------------------------------------------
+    if (pnlInfo.exists) {
+      const position = await db.getPosition(mint);
+      const deployedAmount = position?.deployedSol || 0;
 
-      // This token's share of the on-chain position
-      const share = totalDeployedForMarket > 0 ? deployedAmount / totalDeployedForMarket : 1;
-      const proportionalPnl = (pnlInfo.pnl || 0) * share;
+      // Update PnL in DB
+      if (deployedAmount > 0) {
+        await db.setPosition(mint, {
+          ...position,
+          tokenMint: mint,
+          pnl: pnlInfo.pnl || 0,
+          entry: pnlInfo.entry || position?.entry || 0,
+          updatedAt: Date.now(),
+        });
+      }
 
-      // Update position with proportional PnL
-      await db.setPosition(mint, {
-        ...position,
-        tokenMint: mint,
-        pnl: proportionalPnl,
-        totalPnl: pnlInfo.pnl || 0,
-        share: share,
-        entry: pnlInfo.entry || position?.entry || 0,
-        updatedAt: Date.now(),
-      });
-    }
-
-    // -----------------------------------------------------------------------
-    // Profit-Taking: reduce position and route to buyback when profitable
-    // Triggers at earlyTakeProfitPct (default 20% gain on deployed capital)
-    // -----------------------------------------------------------------------
-    if (pnlInfo.exists && deployedAmount > 0) {
-      const solPrice = await getSolPrice();
-      const deployedUsd = deployedAmount * (solPrice || 150);
-      const proportionalPnl = position?.pnl || 0;
-
-      // Check if PnL exceeds early take-profit threshold
-      const gainPct = deployedUsd > 0 ? proportionalPnl / deployedUsd : 0;
-      const tpThreshold = config.RISK.earlyTakeProfitPct;
-
-      if (gainPct >= tpThreshold && proportionalPnl > 0 && proportionalPnl > 5) {
-        const reducePct = config.RISK.takeProfitReducePct;
-        logger.info('TAKE PROFIT triggered', {
-          mint,
-          market: market || token.underlying,
-          gainPct: (gainPct * 100).toFixed(1) + '%',
-          threshold: (tpThreshold * 100).toFixed(0) + '%',
-          proportionalPnl: proportionalPnl.toFixed(2),
-          reducePct: (reducePct * 100).toFixed(0) + '%',
+      // Take profit if PnL exceeds minimum threshold
+      if (pnlInfo.pnl >= MIN_PROFIT_TO_TAKE && deployedAmount > 0) {
+        logger.info('TAKE PROFIT -- PnL exceeds $' + MIN_PROFIT_TO_TAKE, {
+          mint, market, pnl: pnlInfo.pnl.toFixed(2),
         });
 
         try {
-          const tpResult = await retry(
-            () => perps.reducePosition(market, reducePct, token.side || 'long'),
+          // Close the entire position (not partial reduce)
+          const closeResult = await retry(
+            () => perps.closePosition(market, token.side || 'long'),
             { retries: 2, delayMs: 3000, label: `takeProfit(${market})` }
           );
 
-          const newDeployed = deployedAmount * (1 - reducePct);
-          const freedSol = deployedAmount * reducePct;
-
-          // Update position record
           await db.setPosition(mint, {
             ...position,
             tokenMint: mint,
-            deployedSol: newDeployed,
+            deployedSol: 0,
             lastAction: 'take-profit',
             lastActionAt: Date.now(),
-            pnl: proportionalPnl * (1 - reducePct),
+            pnl: 0,
           });
 
-          // Record take-profit splits: 70% → source token buyback, 30% → FISSION buyback
-          const sourceTokenSol = freedSol * config.PROFIT_SPLIT.sourceToken;
-          const fissionSol = freedSol * config.PROFIT_SPLIT.fission;
-
-          await db.addDoc('splits', {
-            tokenMint: mint,
-            runId: `tp-${Date.now()}`,
-            type: 'take-profit-source',
-            totalSol: sourceTokenSol,
-            positionAmount: 0,
-            buybackAmount: 0,
-            sourceTokenBuyback: sourceTokenSol, // 70% → buy back this token
-            timestamp: Date.now(),
+          logger.info('Take profit executed -- position closed', {
+            mint, market, pnl: pnlInfo.pnl.toFixed(2), txSig: closeResult?.txSig,
           });
 
-          await db.addDoc('splits', {
-            tokenMint: mint,
-            runId: `tp-fission-${Date.now()}`,
-            type: 'take-profit-fission',
-            totalSol: fissionSol,
-            positionAmount: 0,
-            buybackAmount: fissionSol, // 30% → buy back FISSION
-            sourceTokenBuyback: 0,
-            timestamp: Date.now(),
-          });
-
-          logger.info('Take profit executed', {
-            mint,
-            market,
-            freedSol: freedSol.toFixed(6),
-            txSig: tpResult?.txSig,
-          });
-
-          // Return early — don't open new position in same cycle as take-profit
-          return { action: 'take-profit', txSig: tpResult?.txSig, freedSol };
+          return { action: 'take-profit', txSig: closeResult?.txSig, pnl: pnlInfo.pnl };
         } catch (err) {
           logger.error('Take profit failed', { mint, market, error: err.message });
         }
       }
-    }
 
-    // NOTE: Drawdown, take-profit, and risk checks are handled by risk-manager.js
-    // Position-manager only handles opening and adding to positions.
-
-    // -----------------------------------------------------------------------
-    // Check 1: Minimum deploy threshold
-    // -----------------------------------------------------------------------
-    if (availableToDeploy < config.RISK.minDeploySol) {
-      logger.debug('Insufficient funds to deploy', { mint, availableToDeploy });
-      return null;
-    }
-
-    // -----------------------------------------------------------------------
-    // Check 2: Wallet gas buffer — already computed above
-    // -----------------------------------------------------------------------
-    const maxDeployable = totalAvailable;
-
-    if (maxDeployable <= 0) {
-      logger.warn('Wallet balance too low for gas fees, skipping deployment', {
-        mint,
-        walletBalance: walletBalance.toFixed(4),
-        minBalance,
+      // Position exists but not profitable enough -- do nothing, let it ride
+      logger.debug('Position active, letting it ride', {
+        mint, market, pnl: (pnlInfo.pnl || 0).toFixed(2),
       });
       return null;
     }
 
-    // -----------------------------------------------------------------------
-    // Check 3: Max position cap
-    // -----------------------------------------------------------------------
-    let deployAmount = Math.min(
-      availableToDeploy,
-      config.RISK.maxPositionSol - deployedAmount,
-      maxDeployable  // never exceed what the wallet can safely give
-    );
+    // -------------------------------------------------------------------
+    // CASE 2: No position exists -> check if we should open one
+    // -------------------------------------------------------------------
+    const walletBalance = await getSolBalance(config.PROTOCOL_PUBKEY);
+    const minBalance = config.RISK.minWalletBalanceSol;
+    const available = Math.max(0, walletBalance - minBalance);
 
-    if (deployAmount <= 0) {
-      logger.info('Position at max cap or wallet gas limit reached', {
-        mint,
-        deployedAmount,
-        maxPositionSol: config.RISK.maxPositionSol,
-        walletBalance: walletBalance.toFixed(4),
+    // Need at least 0.5 SOL to open
+    if (available < config.RISK.minDeploySol) {
+      logger.debug('Not enough SOL to open position', {
+        mint, available: available.toFixed(4),
       });
       return null;
     }
 
-    // Convert SOL to USD using real Jupiter price
+    // Check if ANY token already has a position -- only one position at a time
+    const allPositions = await db.getAllPositions();
+    const hasActivePosition = allPositions.some(p => (p.deployedSol || 0) > 0);
+    if (hasActivePosition) {
+      logger.debug('Another token already has a position, skipping', { mint });
+      return null;
+    }
+
+    // Open position with target leverage
     const solPrice = await getSolPrice();
-    if (solPrice <= 0) {
-      logger.warn('Could not fetch SOL price, skipping position management', { mint });
-      return null;
-    }
+    if (solPrice <= 0) return null;
 
-    // Calculate leveraged position size
-    // deployAmount = collateral in SOL
-    // sizeUsd = collateralUsd * leverage (what the position is worth after leverage)
+    const deployAmount = available;
     const collateralUsd = deployAmount * solPrice;
-    const leverage = token.leverage || config.RISK.leverage || 100;
-    // Cap leverage for Flash Trade markets (max 100x)
-    const maxLev = perps.getMaxLeverage(market);
-    const effectiveLeverage = Math.min(leverage, maxLev);
-    const sizeUsd = collateralUsd * effectiveLeverage;
+    const leverage = TARGET_LEVERAGE;
+    const sizeUsd = collateralUsd * leverage;
 
-    // Minimum $100 position size — no tiny trades
     if (sizeUsd < 100) {
-      logger.info('Position size too small, waiting for more funds', {
-        mint, sizeUsd: sizeUsd.toFixed(2), collateralSol: deployAmount.toFixed(4),
-      });
+      logger.debug('Position too small', { mint, sizeUsd: sizeUsd.toFixed(2) });
       return null;
     }
 
-    // Token can be configured as long or short
-    // direction already declared above
+    const direction = token.side || 'long';
 
-    logger.info('Opening/adding to position', {
-      mint,
-      market,
-      direction,
-      leverage: `${effectiveLeverage}x`,
-      collateralSol: deployAmount.toFixed(6),
-      collateralUsd: collateralUsd.toFixed(2),
-      sizeUsd: sizeUsd.toFixed(2),
-      totalDeployed: (deployedAmount + deployAmount).toFixed(6),
-      walletBalanceAfter: (walletBalance - deployAmount).toFixed(4),
+    logger.info('Opening position', {
+      mint, market, direction,
+      leverage: leverage + 'x',
+      collateralSol: deployAmount.toFixed(4),
+      sizeUsd: sizeUsd.toFixed(0),
     });
 
-    // Open/add to position with retry — pass collateral + direction
     const result = await retry(
       () => perps.openPosition(market, sizeUsd, deployAmount, direction),
-      { retries: 2, delayMs: 3000, label: `openPosition(${market}, ${direction})` }
+      { retries: 2, delayMs: 3000, label: `openPosition(${market})` }
     );
 
-    // Update position record
     await db.setPosition(mint, {
       tokenMint: mint,
       side: direction,
       market,
-      leverage: effectiveLeverage,
-      deployedSol: deployedAmount + deployAmount,
-      collateralUsd: (deployedAmount + deployAmount) * (solPrice || 150),
+      leverage,
+      deployedSol: deployAmount,
       sizeUsd,
-      lastAddSol: deployAmount,
-      lastAction: position ? 'add' : 'open',
+      lastAction: 'open',
       lastActionAt: Date.now(),
-      entry: pnlInfo.entry || 0,
-      pnl: pnlInfo.pnl || 0,
+      entry: 0,
+      pnl: 0,
     });
 
-    logger.info('Position updated', { mint, market, direction, action: position ? 'add' : 'open', txSig: result.txSig });
-    return { action: position ? 'add' : 'open', txSig: result.txSig, deployedSol: deployAmount };
+    logger.info('Position opened', { mint, market, direction, txSig: result.txSig });
+    return { action: 'open', txSig: result.txSig, deployedSol: deployAmount };
   } catch (err) {
-    logger.error('Position management failed', { mint, error: err.message, stack: err.stack });
+    logger.error('Position management failed', { mint, error: err.message });
     return null;
   }
 }
 
 /**
  * Run position management for ALL active tokens.
+ * In practice, only one token opens/manages the shared position.
  */
 export async function manageAllPositions() {
   const tokens = await getAllTokens();
@@ -333,143 +195,63 @@ export async function manageAllPositions() {
 
 /**
  * Fast profit check for ALL active tokens.
- * Runs every 60-90s. Only checks on-chain PnL and takes profits.
- * Does NOT open new positions or deploy capital.
- * Critical for high-leverage positions (250x) where profit windows are seconds.
+ * Only checks PnL and takes profits. Does NOT open new positions.
  */
 export async function checkProfitsAllTokens() {
   const tokens = await getAllTokens();
   const active = tokens.filter((t) => t.status === 'active');
-
   if (active.length === 0) return [];
 
   const results = [];
   for (const token of active) {
     const mint = token.id || token.mint;
     try {
-      const result = await checkAndTakeProfit(mint, token);
-      if (result) results.push({ mint, ...result });
-    } catch (err) {
-      logger.error('Profit check failed', { mint, error: err.message });
-    }
-  }
+      const market = token.underlying?.toUpperCase();
+      if (!market) continue;
 
-  if (results.length > 0) {
-    logger.info(`Profit check: ${results.length} actions taken`);
-  }
-  return results;
-}
+      const pnlInfo = await perps.getPositionPnl(market);
+      if (!pnlInfo.exists) continue;
 
-/**
- * Check a single token's position for profit-taking opportunity.
- */
-async function checkAndTakeProfit(mint, token) {
-  const position = await db.getPosition(mint);
-  if (!position || !position.deployedSol || position.deployedSol <= 0) return null;
+      const position = await db.getPosition(mint);
+      if (!position || (position.deployedSol || 0) <= 0) continue;
 
-  const underlying = token.underlying?.toUpperCase();
-  const market = underlying && config.ALL_PERPS_MARKETS.includes(underlying)
-    ? underlying : null;
-  if (!market) return null;
-
-  // Fetch live on-chain PnL
-  const pnlInfo = await perps.getPositionPnl(market, token.side || 'long');
-  if (!pnlInfo.exists) {
-    // Position gone — likely liquidated
-    if (position.deployedSol > 0) {
+      // Update PnL
       await db.setPosition(mint, {
         ...position,
-        deployedSol: 0,
-        lastAction: 'liquidated-detected',
-        lastActionAt: Date.now(),
-        pnl: 0,
-        riskAlert: 'position-missing',
+        pnl: pnlInfo.pnl || 0,
+        entry: pnlInfo.entry || position.entry,
+        updatedAt: Date.now(),
       });
-      logger.warn('Position liquidated (fast check)', { mint, market, deployedSol: position.deployedSol });
-    }
-    return null;
-  }
 
-  // Update DB with live PnL
-  const deployedAmount = position.deployedSol;
-  const solPrice = await getSolPrice().catch(() => 0);
-  
-  // Fallback price if Jupiter rate-limited
-  let currentSolPrice = solPrice;
-  if (!currentSolPrice || currentSolPrice <= 0) {
-    try {
-      const cgRes = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd');
-      if (cgRes.ok) {
-        const cgData = await cgRes.json();
-        currentSolPrice = cgData?.solana?.usd || 0;
+      // Take profit if big enough
+      if (pnlInfo.pnl >= MIN_PROFIT_TO_TAKE) {
+        logger.info('FAST TAKE PROFIT triggered', {
+          mint, market, pnl: pnlInfo.pnl.toFixed(2),
+        });
+
+        try {
+          const closeResult = await retry(
+            () => perps.closePosition(market, token.side || 'long'),
+            { retries: 2, delayMs: 2000, label: `fastTP(${market})` }
+          );
+
+          await db.setPosition(mint, {
+            ...position,
+            deployedSol: 0,
+            lastAction: 'fast-take-profit',
+            lastActionAt: Date.now(),
+            pnl: 0,
+          });
+
+          results.push({ mint, action: 'fast-take-profit', pnl: pnlInfo.pnl, txSig: closeResult?.txSig });
+        } catch (err) {
+          logger.error('Fast take profit failed', { mint, error: err.message });
+        }
       }
-    } catch {}
-  }
-
-  const deployedUsd = deployedAmount * (currentSolPrice || 150);
-  const unrealisedPnl = pnlInfo.pnl || 0;
-
-  // Update position with latest PnL
-  await db.setPosition(mint, {
-    ...position,
-    pnl: unrealisedPnl,
-    entry: pnlInfo.entry || position.entry,
-    size: pnlInfo.size,
-    lastRiskCheck: Date.now(),
-  });
-
-  // Check take-profit threshold
-  const gainPct = deployedUsd > 0 ? unrealisedPnl / deployedUsd : 0;
-  const tpThreshold = config.RISK.earlyTakeProfitPct;
-
-  if (gainPct >= tpThreshold && unrealisedPnl > 5) {
-    const reducePct = config.RISK.takeProfitReducePct;
-    logger.info('FAST TAKE PROFIT triggered', {
-      mint, market,
-      gainPct: (gainPct * 100).toFixed(1) + '%',
-      unrealisedPnl: unrealisedPnl.toFixed(2),
-      reducePct: (reducePct * 100).toFixed(0) + '%',
-    });
-
-    try {
-      const tpResult = await retry(
-        () => perps.reducePosition(market, reducePct, token.side || 'long'),
-        { retries: 2, delayMs: 2000, label: `fastTP(${market})` }
-      );
-
-      const freedSol = deployedAmount * reducePct;
-      const sourceTokenSol = freedSol * config.PROFIT_SPLIT.sourceToken;
-      const fissionSol = freedSol * config.PROFIT_SPLIT.fission;
-
-      await db.setPosition(mint, {
-        ...position,
-        deployedSol: deployedAmount * (1 - reducePct),
-        lastAction: 'fast-take-profit',
-        lastActionAt: Date.now(),
-        pnl: unrealisedPnl * (1 - reducePct),
-      });
-
-      // Record splits for buyback engine
-      await db.addDoc('splits', {
-        tokenMint: mint, runId: `ftp-${Date.now()}`, type: 'take-profit-source',
-        totalSol: sourceTokenSol, positionAmount: 0, buybackAmount: 0,
-        sourceTokenBuyback: sourceTokenSol, timestamp: Date.now(),
-      });
-      await db.addDoc('splits', {
-        tokenMint: mint, runId: `ftp-f-${Date.now()}`, type: 'take-profit-fission',
-        totalSol: fissionSol, positionAmount: 0, buybackAmount: fissionSol,
-        sourceTokenBuyback: 0, timestamp: Date.now(),
-      });
-
-      logger.info('Fast take profit executed', {
-        mint, market, freedSol: freedSol.toFixed(6), txSig: tpResult?.txSig,
-      });
-
-      return { action: 'fast-take-profit', txSig: tpResult?.txSig, freedSol };
     } catch (err) {
-      logger.error('Fast take profit failed', { mint, market, error: err.message });
+      logger.debug('Profit check error', { mint, error: err.message });
     }
   }
 
-  return null;
+  return results;
 }

@@ -32,8 +32,14 @@ export async function claimFeesForToken(mint) {
       const feeInfo = await pump.getMinimumDistributableFee(mintPk);
       const distributable = feeInfo?.distributableFees?.toNumber?.() || 0;
 
-      if (distributable === 0) {
-        logger.debug('No distributable fees, skipping', { mint });
+      // Skip if no fees or fees too small (< 0.01 SOL = 10M lamports)
+      // Avoids wasting gas on tiny claims that clutter the chart
+      const MIN_CLAIM_LAMPORTS = 10_000_000; // 0.01 SOL
+      if (distributable < MIN_CLAIM_LAMPORTS) {
+        logger.debug('Fees too small to claim, skipping', {
+          mint,
+          distributableSol: (distributable / 1e9).toFixed(6),
+        });
         return null;
       }
 
