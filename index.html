@@ -81,6 +81,15 @@
         <a href="#how-it-works" class="btn btn-outline">HOW IT WORKS</a>
         <a href="/docs.html" class="btn btn-outline">DOCS</a>
       </div>
+
+      <!-- FISSION Token CA -->
+      <div id="fission-ca-block" style="margin-top:24px;padding:14px 20px;border:1px solid var(--accent);border-radius:3px;display:inline-flex;align-items:center;gap:12px;background:rgba(0,255,170,0.04);max-width:100%;">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0;">
+          <span style="font-family:var(--font-mono);font-size:0.6rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.1em;">FISSION Token</span>
+          <a id="fission-ca-address" href="#" target="_blank" style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-primary);text-decoration:none;word-break:break-all;">Loading...</a>
+        </div>
+        <button id="fission-ca-copy" onclick="navigator.clipboard.writeText(document.getElementById('fission-ca-address').textContent).then(()=>{this.textContent='Copied';setTimeout(()=>this.textContent='Copy',1500)})" style="font-family:var(--font-mono);font-size:0.6rem;padding:6px 14px;border:1px solid var(--accent);background:transparent;color:var(--accent);cursor:pointer;border-radius:2px;white-space:nowrap;">Copy</button>
+      </div>
     </div>
 
     <div class="scroll-hint">
