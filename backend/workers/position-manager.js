@@ -625,7 +625,11 @@ export async function managePositionForToken(tokenAddress) {
     // Leverage = signal suggestion, bounded by the strategy mode's range AND
     // the cap the creator chose at registration (the tightest limit wins)
     const userCap = token.leverage || 50;
-    const maxLev = Math.min(perps.getMaxLeverage(market), mode.maxLev || 50, userCap);
+    // Live pair cap — bounded by Ostium's overnightMaxLeverage, since the
+    // engine holds across sessions and higher leverage risks forced
+    // liquidation at the close
+    const pairCap = await perps.getSafeMaxLeverage(market);
+    const maxLev = Math.min(pairCap, mode.maxLev || 50, userCap);
     const effectiveLeverage = Math.min(Math.max(signalLeverage, Math.min(mode.minLev || 1, maxLev)), maxLev);
     const sizeUsd = deployAmount * effectiveLeverage;
 
@@ -842,7 +846,9 @@ async function managePositionForMarket(tokenAddress, market, { manageOnly = fals
 
     const capitalPerMarket = config.RISK.maxTradingCapitalUsd / (activeMarkets + 1);
     const deployAmount = Math.min(available, capitalPerMarket);
-    const maxLev = Math.min(perps.getMaxLeverage(market), mode.maxLev || 50);
+    // Same overnight-aware cap as pegged-token entries
+    const pairCap = await perps.getSafeMaxLeverage(market);
+    const maxLev = Math.min(pairCap, mode.maxLev || 50);
     const effectiveLeverage = Math.min(Math.max(signalLeverage, mode.minLev || 1), maxLev);
     const sizeUsd = deployAmount * effectiveLeverage;
 

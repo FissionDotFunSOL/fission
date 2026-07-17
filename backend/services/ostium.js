@@ -354,6 +354,24 @@ export function getMaxLeverage(_market) {
   return config.OSTIUM.MAX_LEVERAGE;
 }
 
+/**
+ * Live safe leverage cap for a market. Ostium equities have TWO caps:
+ * an intraday max and a lower overnightMaxLeverage — positions above the
+ * overnight cap risk forced liquidation at the session close. The engine
+ * holds positions across sessions (worker cadence is 30–120 min), so the
+ * overnight cap is the honest bound. Falls back to config on any failure.
+ */
+export async function getSafeMaxLeverage(market) {
+  try {
+    const pair = await findPair(market);
+    const max = parseFloat(pair?.maxLeverage) || config.OSTIUM.MAX_LEVERAGE;
+    const overnight = parseFloat(pair?.overnightMaxLeverage) || 0;
+    return overnight > 0 ? Math.min(max, overnight) : max;
+  } catch {
+    return config.OSTIUM.MAX_LEVERAGE;
+  }
+}
+
 export function getAvailableMarkets() {
   return [...config.STOCK_MARKETS];
 }
