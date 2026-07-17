@@ -301,7 +301,7 @@
       <h2 id="how-it-works">How It Works</h2>
       <p>The protocol operates in a continuous three-phase cycle:</p>
       <ol>
-        <li><strong>Fee Collection</strong> — When a creator deploys a token on Pons and sets the Creator wallet to the Fill protocol wallet, all creator fees from that token are automatically routed to Fill.</li>
+        <li><strong>Fee Collection</strong> — When a creator deploys a token on Pons (Creator wallet field) or LaunchHood (Reward recipient field) pointed at the Fill protocol wallet, all creator fees from that token are automatically routed to Fill.</li>
         <li><strong>Perpetual Deployment</strong> — Collected fees are deployed into leveraged stock perpetual positions on Ostium — a permissionless RWA perp DEX on Arbitrum — based on the creator's chosen stock, direction, and leverage level.</li>
         <li><strong>Buyback and Burn</strong> — When positions are profitable, gains are harvested, used to buy the creator's token on the open market, and the purchased tokens are permanently burned by sending them to a dead address.</li>
       </ol>
@@ -375,7 +375,7 @@
         <li><strong>Pick a launchpad</strong> — Pons or LaunchHood — both route creator fees to the engine via a launch-form field.</li>
         <li><strong>Peg a stock</strong> — pick the Ostium market your token tracks, a direction, a max-leverage cap, and a bot strategy (Conservative / Balanced / Degen / Off).</li>
         <li><strong>Name your derivative token.</strong></li>
-        <li><strong>Deploy on the launchpad</strong> — the wizard shows the exact settings for your chosen pad (on Pons: set the Creator wallet to the protocol wallet).</li>
+        <li><strong>Deploy on the launchpad</strong> — the wizard shows the exact settings for your chosen pad with real screenshots (Pons: Creator wallet · LaunchHood: Reward recipient).</li>
         <li><strong>Verify & register</strong> — paste the token address (0x…); on-chain verification confirms fees route to the engine.</li>
       </ol>
       <p>Once verified, the protocol begins collecting fees and deploying positions automatically. No further action is required.</p>

@@ -16,14 +16,14 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://fill.fun" />
   <meta property="og:title" content="FILL — Stock-Perp-Backed Token Derivatives on Robinhood Chain" />
-  <meta property="og:description" content="Pons creator fees fuel automated stock perp positions on Ostium. Profits buy back and burn your token. No vaults. No deposits. Pure on-chain." />
+  <meta property="og:description" content="Launchpad creator fees fuel automated stock perp positions on Ostium. Profits buy back and burn your token. No vaults. No deposits. Pure on-chain." />
   <meta property="og:image" content="https://fill.fun/logo-512.png" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary" />
   <meta name="twitter:site" content="@filldotfun" />
   <meta name="twitter:title" content="FILL — Stock-Perp-Backed Token Derivatives on Robinhood Chain" />
-  <meta name="twitter:description" content="Pons creator fees fuel automated stock perp positions on Ostium. Profits buy back and burn your token. Pure on-chain." />
+  <meta name="twitter:description" content="Launchpad creator fees fuel automated stock perp positions on Ostium. Profits buy back and burn your token. Pure on-chain." />
   <meta name="twitter:image" content="https://fill.fun/logo-512.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -120,7 +120,7 @@
           </div>
 
           <div class="leverage-selector" style="margin-top:16px;">
-            <label style="display:block;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px;">Max Leverage <span style="text-transform:none;letter-spacing:0;color:var(--text-tertiary);">— the engine sizes each trade up to this cap based on live signals</span></label>
+            <label style="display:block;font-family:var(--font-mono);font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--text-tertiary);margin-bottom:8px;">Max Leverage <span style="text-transform:none;letter-spacing:0;color:var(--text-tertiary);">— the engine sizes each trade up to this cap based on live signals; per-market overnight limits may cap it lower (e.g. AAPL 10x)</span></label>
             <div style="display:flex;gap:6px;flex-wrap:wrap;" id="leverage-options">
               <button class="btn btn-outline btn-sm leverage-btn" data-lev="5" style="font-family:var(--font-mono);min-width:52px;">5x</button>
               <button class="btn btn-outline btn-sm leverage-btn" data-lev="10" style="font-family:var(--font-mono);min-width:52px;">10x</button>
@@ -154,7 +154,7 @@
         <div class="wizard-panel" id="wizard-step-2">
           <h3 class="wizard-panel-title">Name Your Derivative</h3>
           <p class="wizard-panel-desc">
-            Choose a ticker symbol. This will be the token name on Pons.
+            Choose a ticker symbol. This will be the token name on your launchpad.
           </p>
           <input type="text" id="derivative-name" class="input" placeholder="e.g. TURBO_AAPL" maxlength="20" />
           <div class="wizard-nav">
