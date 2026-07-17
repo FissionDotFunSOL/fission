@@ -61,8 +61,10 @@ const LAUNCHPADS = {
     url: 'https://launchhood.com',
     factory: getAddress(process.env.LAUNCHHOOD_FACTORY || '0x62B33A039D289CBDa50EbeB72Fe4261449E61Bcf'),
     locker: process.env.LAUNCHHOOD_LOCKER ? getAddress(process.env.LAUNCHHOOD_LOCKER) : '',
-    support: 'partial',
-    howTo: 'Launch the token from the protocol wallet, or transfer its fee rights to it.',
+    // Verified on the live create form: an Advanced "Reward recipient" field
+    // routes the creator share of locked-LP fees to any address
+    support: 'full',
+    howTo: 'Set the Reward recipient field (Advanced) to the protocol wallet at launch.',
   },
   robinlaunch: {
     id: 'robinlaunch',

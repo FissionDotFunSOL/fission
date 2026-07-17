@@ -121,20 +121,36 @@ function renderSetupInstructions() {
       <figcaption>${caption}</figcaption>
     </figure>`;
 
-  const steps = lp.id === 'pons'
-    ? [
-        `Go to <strong>pons.family → Create</strong> and fill in your token's name, ticker, description and image.
-         ${fig('/guide/pons-form.png', 'pons.family/launchpad/create', 'The Pons launch form — fill the basics here. The 0.0005 ETH launch fee is shown on the right.')}`,
-        `Open the <strong>Advanced</strong> section and paste the protocol wallet into the <strong>Creator wallet</strong> field:${walletRow}
-         ${fig('/guide/pons-advanced.png', 'pons.family — Advanced section', 'Exactly like this — the address shown IS the protocol wallet. Pons’ own hint confirms it: “receives the creator share of trading fees (70%)”.')}`,
-        `Complete the launch (0.0005 ETH fee). At <strong>4.2 ETH raised</strong> your token graduates to a locked Uniswap pool — creator fees flow to the engine forever.`,
-        `Copy your new <strong>token address</strong> (0x…) and paste it in the next step to verify &amp; register.`,
-      ]
-    : [
-        `Go to <strong>${lp.url.replace('https://', '')}</strong> and launch your token <strong>from the protocol wallet</strong> (or transfer its fee rights to it):${walletRow}`,
-        `${lp.name} routes creator fees to the launching wallet — that's how the engine collects them.`,
-        `Copy the <strong>token address</strong> (0x…) of your newly created token.`,
-      ];
+  const STEP_SETS = {
+    pons: [
+      `Go to <strong>pons.family → Create</strong> and fill in your token's name, ticker, description and image.
+       ${fig('/guide/pons-form.png', 'pons.family/launchpad/create', 'The Pons launch form — fill the basics here. The 0.0005 ETH launch fee is shown on the right.')}`,
+      `Open the <strong>Advanced</strong> section and paste the protocol wallet into the <strong>Creator wallet</strong> field:${walletRow}
+       ${fig('/guide/pons-advanced.png', 'pons.family — Advanced section', 'Exactly like this — the address shown IS the protocol wallet. Pons’ own hint confirms it: “receives the creator share of trading fees (70%)”.')}`,
+      `Complete the launch (0.0005 ETH fee). At <strong>4.2 ETH raised</strong> your token graduates to a locked Uniswap pool — creator fees flow to the engine forever.`,
+      `Copy your new <strong>token address</strong> (0x…) and paste it in the next step to verify &amp; register.`,
+    ],
+    launchhood: [
+      `Go to <strong>launchhood.com → Create coin</strong> and fill in your coin's name, ticker and image.
+       ${fig('/guide/launchhood-form.png', 'launchhood.com/create', 'The LaunchHood create form — fill the basics here.')}`,
+      `Open <strong>Advanced</strong> and paste the protocol wallet into the <strong>Reward recipient</strong> field:${walletRow}
+       ${fig('/guide/launchhood-wallet.png', 'launchhood.com — Advanced section', 'Exactly like this — LaunchHood’s own hint confirms it: “address that earns the creator share of the locked-LP trading fees”.')}`,
+      `Hit <strong>Launch coin</strong>. From then on the creator share of trading fees flows to the engine automatically.`,
+      `Copy your new <strong>token address</strong> (0x…) and paste it in the next step to verify &amp; register.`,
+    ],
+    robinlaunch: [
+      `Robinlaunch has no fee-routing field — creator fees follow the wallet that <em>launches</em> the token. So the token must be launched <strong>from the protocol wallet</strong>:${walletRow}
+       ${fig('/guide/robinlaunch-home.png', 'robinlaunch.fun', 'Robinlaunch — token creation opens after connecting a wallet. The connected wallet becomes the fee recipient, so it must be the protocol wallet.')}`,
+      `If you already launched from your own wallet, transfer the token's fee rights to the protocol wallet instead (or relaunch).`,
+      `Copy the <strong>token address</strong> (0x…) of your newly created token and verify it in the next step.`,
+    ],
+  };
+
+  const steps = STEP_SETS[lp.id] || [
+    `Go to <strong>${lp.url.replace('https://', '')}</strong> and launch your token <strong>from the protocol wallet</strong> (or transfer its fee rights to it):${walletRow}`,
+    `${lp.name} routes creator fees to the launching wallet — that's how the engine collects them.`,
+    `Copy the <strong>token address</strong> (0x…) of your newly created token.`,
+  ];
 
   box.innerHTML = steps.map((s, i) => `
     <div class="instruction-step">
