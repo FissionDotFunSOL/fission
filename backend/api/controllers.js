@@ -574,6 +574,12 @@ export async function getTicker(_req, res) {
     const ticker = results.filter(Boolean);
     if (ticker.length > 0) {
       _tickerCache = { data: ticker, expiresAt: Date.now() + 60_000 };
+      return res.json({ ticker });
+    }
+    // Upstream hiccup: serve the last REAL quotes (stale beats blank —
+    // never fabricate) as long as we have any
+    if (_tickerCache.data) {
+      return res.json({ ticker: _tickerCache.data, stale: true });
     }
     res.json({ ticker });
   } catch (err) {
@@ -604,13 +610,28 @@ export async function getStockChart(req, res) {
       return res.json(cached.data);
     }
 
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}&includePrePost=true`,
-      { headers: { 'User-Agent': 'Mozilla/5.0' } },
-    );
-    if (!r.ok) return res.status(502).json({ error: `Upstream ${r.status}` });
+    // On any upstream failure, fall back to the last REAL candles we have
+    // (stale-but-true beats an OFFLINE flash — and we never fabricate).
+    const staleFallback = () => {
+      const stale = _stockChartCache.get(cacheKey);
+      if (stale?.data?.candles?.length >= 2) {
+        return res.json({ ...stale.data, stale: true });
+      }
+      return null;
+    };
 
-    const raw = await r.json();
+    let raw;
+    try {
+      const r = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=${interval}&range=${range}&includePrePost=true`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } },
+      );
+      if (!r.ok) return staleFallback() ?? res.status(502).json({ error: `Upstream ${r.status}` });
+      raw = await r.json();
+    } catch {
+      return staleFallback() ?? res.status(502).json({ error: 'Upstream unreachable' });
+    }
+
     const result = raw?.chart?.result?.[0];
     const ts = result?.timestamp || [];
     const q = result?.indicators?.quote?.[0] || {};
@@ -618,6 +639,11 @@ export async function getStockChart(req, res) {
     for (let i = 0; i < ts.length; i++) {
       if (q.close?.[i] == null) continue;
       candles.push({ t: ts[i] * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume?.[i] || 0 });
+    }
+
+    if (candles.length < 2) {
+      const served = staleFallback();
+      if (served) return;
     }
 
     const meta = result?.meta || {};

@@ -8,6 +8,7 @@
 const WATCH_SYMBOLS = ['AAPL', 'TSLA', 'NVDA', 'HOOD'];
 
 export function initHeroWatchlist() {
+  initEngineStatus();
   const host = document.getElementById('hero-watchlist');
   if (!host) return;
 
@@ -37,6 +38,40 @@ function fmt(p) {
   if (p >= 1000) return p.toLocaleString('en-US', { maximumFractionDigits: 0 });
   if (p >= 1) return p.toFixed(2);
   return p.toFixed(4);
+}
+
+// The terminal window's LIVE badge and engine line are driven by the real
+// backend status — never claim LIVE when the engine is unreachable.
+function initEngineStatus() {
+  const live = document.querySelector('.term-live');
+  const engineLine = document.getElementById('hero-engine-line');
+
+  const refresh = async () => {
+    try {
+      const res = await fetch('/api/v1/status');
+      if (!res.ok) throw new Error('down');
+      const d = await res.json();
+
+      if (live) live.innerHTML = '<span class="pulse-dot"></span> LIVE';
+      if (engineLine) {
+        const armed = d.wallet?.signerLoaded;
+        const tokens = d.engine?.totalTokens ?? 0;
+        const mkt = d.stockMarket?.open ? 'market open' : 'market closed';
+        engineLine.innerHTML =
+          `<span class="k">engine</span><span class="ok">${armed ? '▲ armed' : '○ read-only'}</span>` +
+          `<span class="k">·</span><span>${tokens} token${tokens === 1 ? '' : 's'}</span>` +
+          `<span class="k">·</span><span>${mkt}</span>`;
+      }
+    } catch {
+      if (live) live.innerHTML = '<span style="width:7px;height:7px;border-radius:50%;background:var(--text-tertiary);display:inline-block;"></span> OFFLINE';
+      if (engineLine) {
+        engineLine.innerHTML = '<span class="k">engine</span><span class="k">○ unreachable</span>';
+      }
+    }
+  };
+
+  refresh();
+  setInterval(refresh, 60_000);
 }
 
 async function fetchPrices() {
