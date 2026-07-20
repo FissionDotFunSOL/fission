@@ -132,8 +132,9 @@ export async function isStockMarketOpen() {
 // ── Account state ───────────────────────────────────────────────────────────
 
 async function clearinghouse() {
-  const client = await getClient();
-  return client.info.getClearinghouseState(config.PROTOCOL_ADDRESS);
+  // Raw info endpoint (no auth, no SDK surface drift) — the SDK is only
+  // needed for the signed write path.
+  return info({ type: 'clearinghouseState', user: config.PROTOCOL_ADDRESS });
 }
 
 export async function getFreeCollateral() {
@@ -211,8 +212,7 @@ export async function getPositionPnl(market) {
 
 export async function getFills(limit = 60) {
   try {
-    const client = await getClient();
-    const fills = await client.info.getUserFills(config.PROTOCOL_ADDRESS);
+    const fills = await info({ type: 'userFills', user: config.PROTOCOL_ADDRESS });
     return (fills || []).slice(0, limit).map((f) => ({
       market: (f.coin || '').replace(`${DEX}:`, ''),
       side: f.dir || (f.side === 'B' ? 'buy' : 'sell'),
