@@ -24,28 +24,12 @@ const SYMBOL_ALIAS = { GOOG: 'GOOGL' };
 const hlSymbol = (market) => `${DEX}:${(SYMBOL_ALIAS[market] || market).toUpperCase()}`;
 
 let _sdk = null;
-let _client = null;
 let _metaCache = { at: 0, byName: new Map() };
+let _dexOffset = null; // asset-id offset for the xyz builder dex
 
 async function loadSdk() {
   if (!_sdk) _sdk = await import('hyperliquid');
   return _sdk;
-}
-
-async function getClient() {
-  if (_client) return _client;
-  const { Hyperliquid } = await loadSdk();
-  _client = new Hyperliquid({
-    privateKey: config.protocolWallet?.privateKey,   // read-only if undefined
-    testnet: false,
-    enableWs: false,
-  });
-  await _client.connect().catch(() => {});
-  logger.info('Hyperliquid client created', {
-    trader: config.PROTOCOL_ADDRESS,
-    mode: config.protocolWallet ? 'signer' : 'read-only',
-  });
-  return _client;
 }
 
 // Raw info POST (no auth) — used for market data so it works read-only.
@@ -68,6 +52,7 @@ async function getMeta() {
     byName.set(a.name, {
       name: a.name,
       market: a.name.replace(`${DEX}:`, ''),
+      universeIndex: i, // position in the dex universe → asset-id component
       maxLeverage: a.maxLeverage,
       szDecimals: a.szDecimals,
       onlyIsolated: a.onlyIsolated === true,
@@ -78,6 +63,22 @@ async function getMeta() {
   });
   _metaCache = { at: Date.now(), byName };
   return _metaCache;
+}
+
+// Builder-dex asset ids (per the official SDK): builder dexes start at
+// 110000 in perpDexs order, so asset = 110000 + (dexPos-1)*10000 + index.
+async function getDexOffset() {
+  if (_dexOffset !== null) return _dexOffset;
+  const dexes = await info({ type: 'perpDexs' });
+  const pos = dexes.findIndex((d) => d && d.name === DEX);
+  if (pos < 1) throw new Error(`Hyperliquid dex "${DEX}" not found in perpDexs`);
+  _dexOffset = 110000 + (pos - 1) * 10000;
+  return _dexOffset;
+}
+
+async function assetIdFor(pair) {
+  const offset = await getDexOffset();
+  return offset + pair.universeIndex;
 }
 
 // ── Market data (interface parity with ostium) ──────────────────────────────
@@ -229,10 +230,76 @@ export async function getFills(limit = 60) {
 }
 
 // ── Trading (write path) ────────────────────────────────────────────────────
+//
+// Orders go to the exchange endpoint directly: the SDK's symbol map only
+// knows the default dex (builder-dex names like "xyz:COIN" throw "Unknown
+// asset"), so we compute asset ids ourselves and reuse the SDK's exported,
+// battle-tested signing helpers (orderToWire/orderWireToAction/signL1Action).
+// "Market" orders are aggressive IOC limits at mark ± slippage — the same
+// thing the SDK's marketOpen does under the hood.
 
 function roundSize(sizeShares, szDecimals) {
   const f = 10 ** szDecimals;
   return Math.floor(sizeShares * f) / f;
+}
+
+// Hyperliquid price rules (perps): ≤5 significant figures AND
+// ≤ (6 - szDecimals) decimal places. Integer prices are always allowed.
+export function roundPx(px, szDecimals) {
+  const maxDec = Math.max(0, 6 - szDecimals);
+  let p = parseFloat(Number(px).toPrecision(5));
+  p = Math.round(p * 10 ** maxDec) / 10 ** maxDec;
+  return p;
+}
+
+async function exchangePost(action, nonce, signature) {
+  const res = await fetch('https://api.hyperliquid.xyz/exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, nonce, signature }),
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`Hyperliquid exchange ${res.status}: ${JSON.stringify(data)}`);
+  if (data?.status && data.status !== 'ok') throw new Error(String(data.response || data.status));
+  return data;
+}
+
+async function signAndSend(action) {
+  if (!config.protocolWallet) throw new Error('Protocol wallet not loaded');
+  const { signL1Action } = await loadSdk();
+  const nonce = Date.now();
+  const signature = await signL1Action(config.protocolWallet, action, null, nonce, true);
+  return exchangePost(action, nonce, signature);
+}
+
+// One IOC order; returns the exchange's per-order status.
+async function placeIocOrder(pair, { isBuy, sizeShares, reduceOnly }) {
+  const { orderToWire, orderWireToAction } = await loadSdk();
+  const asset = await assetIdFor(pair);
+  const px = roundPx(pair.markPx * (isBuy ? 1 + SLIPPAGE : 1 - SLIPPAGE), pair.szDecimals);
+  const wire = orderToWire({
+    coin: pair.name,
+    is_buy: isBuy,
+    limit_px: px,
+    sz: sizeShares,
+    reduce_only: !!reduceOnly,
+    order_type: { limit: { tif: 'Ioc' } },
+  }, asset);
+  const action = orderWireToAction([wire], 'na');
+  const result = await signAndSend(action);
+  const status = result?.response?.data?.statuses?.[0];
+  if (status?.error) throw new Error(status.error);
+  return status;
+}
+
+async function setLeverage(pair, marginMode, leverage) {
+  const asset = await assetIdFor(pair);
+  return signAndSend({
+    type: 'updateLeverage',
+    asset,
+    isCross: marginMode !== 'isolated',
+    leverage,
+  });
 }
 
 export async function openPosition(market, sizeUsd, collateralUsd, side = 'long') {
@@ -250,12 +317,10 @@ export async function openPosition(market, sizeUsd, collateralUsd, side = 'long'
     const sizeShares = roundSize((collateralUsd * leverage) / price, pair.szDecimals);
     if (sizeShares <= 0) return { success: false, skipped: 'size-too-small' };
 
-    const client = await getClient();
-    const symbol = pair.name;                       // e.g. "xyz:AAPL"
     const marginMode = pair.onlyIsolated ? 'isolated' : 'cross';
 
     // Set leverage/margin mode first (idempotent), then market order.
-    await client.exchange.updateLeverage(symbol, marginMode, leverage).catch((e) =>
+    await setLeverage(pair, marginMode, leverage).catch((e) =>
       logger.debug('HL updateLeverage note', { market, error: e.message }));
 
     logger.info('Opening position on Hyperliquid', {
@@ -263,12 +328,13 @@ export async function openPosition(market, sizeUsd, collateralUsd, side = 'long'
       collateralUsd: collateralUsd.toFixed(2), sizeShares,
     });
 
-    const result = await client.custom.marketOpen(symbol, side !== 'short', sizeShares, undefined, SLIPPAGE);
-    const status = result?.response?.data?.statuses?.[0];
-    const txSig = status?.filled?.oid || status?.resting?.oid || result?.status || 'submitted';
-    if (status?.error) throw new Error(status.error);
+    const status = await placeIocOrder(pair, { isBuy: side !== 'short', sizeShares });
+    const txSig = status?.filled?.oid || status?.resting?.oid || 'submitted';
 
-    logger.info('Hyperliquid order placed', { market, side, leverage: leverage + 'x', txSig });
+    logger.info('Hyperliquid order placed', {
+      market, side, leverage: leverage + 'x', txSig,
+      avgPx: status?.filled?.avgPx, totalSz: status?.filled?.totalSz,
+    });
     return { txSig: String(txSig), success: true };
   } catch (err) {
     logger.error('HL openPosition failed', { market, side, sizeUsd, error: err.message });
@@ -285,24 +351,33 @@ export async function openShort(market, sizeUsd, collateralUsd) {
 
 export async function closePosition(market) {
   if (!config.protocolWallet) throw new Error('Protocol wallet not loaded');
-  const client = await getClient();
-  const result = await client.custom.marketClose(hlSymbol(market));
-  const status = result?.response?.data?.statuses?.[0];
+  const positions = await getAllPositions();
+  const p = positions.find((x) => x.market === (SYMBOL_ALIAS[market] || market).toUpperCase());
+  if (!p) return { success: false, skipped: 'no-position' };
+  const pair = await findPair(market);
+  // reduce-only IOC for the full size: can only shrink the position,
+  // never flip it, and is rejected outright if the position is gone
+  const status = await placeIocOrder(pair, {
+    isBuy: p.side === 'short',
+    sizeShares: p.sizeShares,
+    reduceOnly: true,
+  });
   return { txSig: String(status?.filled?.oid || 'closed'), success: true };
 }
 
 export async function reducePosition(market, pct) {
+  if (!config.protocolWallet) throw new Error('Protocol wallet not loaded');
   const positions = await getAllPositions();
   const p = positions.find((x) => x.market === (SYMBOL_ALIAS[market] || market).toUpperCase());
   if (!p) return { success: false, skipped: 'no-position' };
-  const client = await getClient();
   const pair = await findPair(market);
-  // partial close via marketClose(symbol, size) — SDK handles reduce
-  // semantics, so a rounding overshoot can never flip the position
   const closeSize = roundSize(p.sizeShares * Math.min(Math.max(pct, 0), 1), pair.szDecimals);
   if (closeSize <= 0) return { success: false, skipped: 'size-too-small' };
-  const result = await client.custom.marketClose(pair.name, closeSize, undefined, SLIPPAGE);
-  const status = result?.response?.data?.statuses?.[0];
+  const status = await placeIocOrder(pair, {
+    isBuy: p.side === 'short',
+    sizeShares: closeSize,
+    reduceOnly: true,
+  });
   return { txSig: String(status?.filled?.oid || 'reduced'), success: true };
 }
 
@@ -390,6 +465,5 @@ export async function ensureCollateral() {
 }
 
 export async function shutdown() {
-  try { await _client?.disconnect?.(); } catch {}
-  _client = null;
+  // Direct REST — nothing to disconnect.
 }

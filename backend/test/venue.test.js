@@ -88,3 +88,12 @@ test('discovery: extractCandidates harvests emitter + address topics, never the 
   ] }, wt);
   assert.deepEqual(junk, []);
 });
+
+test('roundPx obeys Hyperliquid price rules (5 sig figs, 6-szDecimals decimals)', async () => {
+  const { roundPx } = hyperliquid;
+  assert.equal(roundPx(157.29 * 1.005, 3), 158.08);    // 5 sig figs is the tighter cap here
+  assert.equal(roundPx(333.39456, 3), 333.39);          // 5 sig figs cap
+  assert.equal(roundPx(95.416789, 3), 95.417);
+  assert.equal(roundPx(643.5849, 3), 643.58);
+  assert.equal(roundPx(100.123456, 0), 100.12);         // 0 szDec -> 6 decimals, 5 sig figs
+});
