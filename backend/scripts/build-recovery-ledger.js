@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 /*
- * Build (or rebuild) the recovery ledger for the retired first $FILL token.
+ * Build (or rebuild) the ELIGIBILITY database for the recovery pool.
  *
- * Computes every wallet's net ETH loss on the old token from chain data:
+ * Computes every wallet's net ETH loss on the retired first $FILL token:
  *   loss = ETH sent to the bonding curve (buys) − ETH received back (sells)
- * and writes the ledger to Firestore. The fee-claimer then routes 10% of
- * all protocol fees into the pool and pays victims automatically until
- * everyone is made whole.
+ * and stores it as 'recovery-eligibility'. Nobody is paid from this alone:
+ * victims CLAIM on the site (enter their wallet), the backend verifies the
+ * wallet against this database, and only verified claimants enter the
+ * payout ledger. 10% of all fees repay claimants until each is whole.
  *
- * Idempotent: re-running refreshes losses but NEVER lowers a wallet's
- * already-paid amount. Run it one final time right before the relaunch
- * post so late buyers are included.
+ * Idempotent: re-running refreshes eligibility; the claims ledger and all
+ * paid amounts are preserved. Re-run right before the relaunch post so
+ * late buyers are included.
  *
  *   node scripts/build-recovery-ledger.js          # preview only
  *   node scripts/build-recovery-ledger.js --write  # write to Firestore
@@ -23,16 +24,31 @@ const CURVE = '0xdAF8F478C1cFC6241303b108A1D82B4246E13b18'.toLowerCase();
 const DUST_ETH = 0.00005; // ignore losses below this
 const API = `${config.EXPLORER_URL}/api/v2`;
 
+async function fetchJson(url) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 15000);
+    try {
+      const res = await fetch(url, { signal: ctl.signal });
+      if (res.ok) return await res.json();
+      if (res.status === 429) { await new Promise(r => setTimeout(r, 2000 * (attempt + 1))); continue; }
+      return null;
+    } catch { /* timeout/network — retry */ }
+    finally { clearTimeout(t); }
+  }
+  return null;
+}
+
 async function pageAll(path, pick) {
   const out = [];
   let url = `${API}${path}`;
-  for (let page = 0; page < 40 && url; page++) {
-    const res = await fetch(url);
-    if (!res.ok) break;
-    const d = await res.json();
+  for (let page = 0; page < 100 && url; page++) {
+    const d = await fetchJson(url);
+    if (!d) break;
     for (const it of d.items || []) out.push(pick(it));
     const np = d.next_page_params;
     url = np ? `${API}${path}${path.includes('?') ? '&' : '?'}${new URLSearchParams(np)}` : null;
+    if (page % 10 === 9) console.log(`  …page ${page + 1}, ${out.length} items`);
   }
   return out;
 }
@@ -67,20 +83,21 @@ async function mapLimit(items, limit, fn) {
     while (i < arr.length) { const idx = i++; await fn(arr[idx]).catch(() => {}); }
   }));
 }
+let _done = 0;
 const get = async (path) => {
-  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 15000);
-  try { return await (await fetch(`${API}${path}`, { signal: ctl.signal })).json(); }
-  finally { clearTimeout(t); }
+  const r = await fetchJson(`${API}${path}`);
+  if (++_done % 50 === 0) console.log(`  …${_done} txs fetched`);
+  return r;
 };
 
-await mapLimit(buyTx, 8, async ([hash, buyer]) => {
+await mapLimit(buyTx, 20, async ([hash, buyer]) => {
   const tx = await get(`/transactions/${hash}`);
   if (tx?.status !== 'ok') return;
   const value = parseFloat(tx.value || 0) / 1e18;
   const sender = (tx.from?.hash || buyer).toLowerCase();
   if (value > 0) flow(sender).in += value;
 });
-await mapLimit(sellTx, 8, async ([hash, seller]) => {
+await mapLimit(sellTx, 20, async ([hash, seller]) => {
   const itx = await get(`/transactions/${hash}/internal-transactions`);
   // ETH the seller actually received back in this tx
   for (const it of itx?.items || []) {
@@ -109,26 +126,32 @@ for (const [w, v] of Object.entries(victims).sort((a, b) => b[1].lostEth - a[1].
 }
 
 if (process.argv.includes('--write')) {
-  const existing = await db.getConfig('recovery-ledger').catch(() => null);
-  // never lose payment history on rebuild
-  if (existing?.victims) {
-    for (const [w, v] of Object.entries(existing.victims)) {
-      if (victims[w]) victims[w].paidEth = v.paidEth || 0;
-      else if ((v.paidEth || 0) > 0) victims[w] = v; // paid wallet dropped from recompute — keep it
-    }
-  }
-  await db.setConfig('recovery-ledger', {
+  // Eligibility database (who MAY claim)
+  const wallets = {};
+  for (const [w, v] of Object.entries(victims)) wallets[w] = v.lostEth;
+  await db.setConfig('recovery-eligibility', {
     token: OLD_TOKEN,
     curve: CURVE,
-    victims,
-    liabilityEth,
-    accruedEth: existing?.accruedEth || 0,
-    paidEth: existing?.paidEth || 0,
-    complete: false,
+    wallets,
+    totalEligibleEth: liabilityEth,
+    eligibleCount: Object.keys(wallets).length,
     snapshotAt: Date.now(),
-    createdAt: existing?.createdAt || Date.now(),
   });
-  console.log('ledger written to Firestore ✓');
+
+  // Claims ledger: create if missing, ALWAYS preserve existing claims/payments
+  const ledger = await db.getConfig('recovery-ledger').catch(() => null);
+  if (!ledger) {
+    await db.setConfig('recovery-ledger', {
+      token: OLD_TOKEN,
+      victims: {},          // filled by claims, not by this script
+      liabilityEth: 0,      // sum of CLAIMED losses
+      accruedEth: 0,
+      paidEth: 0,
+      complete: false,
+      createdAt: Date.now(),
+    });
+  }
+  console.log('eligibility written ✓ (claims ledger preserved)');
 } else {
   console.log('(preview only — pass --write to store)');
 }

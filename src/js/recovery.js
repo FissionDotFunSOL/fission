@@ -39,7 +39,11 @@ export function initRecovery() {
 
     const badge = el('rec-status');
     if (badge) {
-      badge.textContent = d.complete ? '✓ COMPLETE — EVERYONE MADE WHOLE' : 'ACTIVE — 10% OF ALL FEES';
+      badge.textContent = d.complete
+        ? '✓ COMPLETE — EVERY CLAIMANT MADE WHOLE'
+        : d.victims.length === 0
+          ? `CLAIMS OPEN — ${d.eligibleCount || 0} WALLETS ELIGIBLE`
+          : `ACTIVE — 10% OF ALL FEES · ${d.victims.length} CLAIMED`;
       badge.style.color = d.complete ? 'var(--accent)' : 'var(--yellow, #ffcc00)';
     }
 
@@ -70,6 +74,42 @@ export function initRecovery() {
         : '<div style="font-family:var(--font-mono);font-size:0.72rem;color:var(--text-tertiary);">No payouts yet — the pool is accruing from fees.</div>';
     }
   };
+
+  // Claim box: verify a wallet against on-chain trade history and queue it
+  const btn = document.getElementById('rec-claim-btn');
+  const input = document.getElementById('rec-claim-input');
+  const result = document.getElementById('rec-claim-result');
+  if (btn && input && result) {
+    btn.addEventListener('click', async () => {
+      const wallet = input.value.trim();
+      result.style.color = 'var(--text-secondary)';
+      result.textContent = 'Checking on-chain trade history…';
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/v1/recovery/claim', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ wallet }),
+        });
+        const d = await res.json();
+        if (d.ok) {
+          result.style.color = 'var(--accent)';
+          result.textContent = d.madeWhole
+            ? `✓ This wallet lost ${d.lostEth.toFixed(5)} ETH and has been FULLY refunded (${d.paidEth.toFixed(5)} ETH).`
+            : `✓ Verified — this wallet lost ${d.lostEth.toFixed(5)} ETH. It's in the queue; refunded so far: ${d.paidEth.toFixed(5)} ETH. Payouts arrive automatically.`;
+          refresh(); // show it in the public table immediately
+        } else {
+          result.style.color = 'var(--yellow, #ffcc00)';
+          result.textContent = d.message || 'Claim failed.';
+        }
+      } catch {
+        result.style.color = 'var(--yellow, #ffcc00)';
+        result.textContent = 'Network error — try again in a moment.';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
 
   refresh();
   setInterval(refresh, 60_000);

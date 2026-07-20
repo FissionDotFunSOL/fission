@@ -440,6 +440,20 @@
         </p>
       </div>
 
+      <div class="glass-card reveal" style="padding:24px;max-width:860px;margin:0 auto 18px;">
+        <div style="font-family:var(--font-mono);font-size:0.62rem;color:var(--accent);text-transform:uppercase;letter-spacing:0.14em;margin-bottom:10px;">Check your wallet · claim your refund</div>
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:12px;">
+          Paste the wallet you traded the old token with. We verify it against the on-chain trade history —
+          if it took a net loss, it joins the public repayment queue below. Refunds pay out automatically in ETH.
+        </p>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          <input id="rec-claim-input" type="text" placeholder="0x… your wallet address" spellcheck="false"
+            style="flex:1;min-width:260px;background:var(--bg-secondary,rgba(255,255,255,0.03));border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-family:var(--font-mono);font-size:0.78rem;color:var(--text-primary);" />
+          <button id="rec-claim-btn" class="btn btn-primary btn-sm" type="button">Check &amp; Claim</button>
+        </div>
+        <div id="rec-claim-result" style="margin-top:10px;font-family:var(--font-mono);font-size:0.75rem;"></div>
+      </div>
+
       <div class="glass-card reveal" style="padding:24px;max-width:860px;margin:0 auto;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
           <span id="rec-status" style="font-family:var(--font-mono);font-size:0.68rem;letter-spacing:0.14em;">LOADING…</span>

@@ -5,6 +5,7 @@ import { STRATEGY_MODES, DEFAULT_STRATEGY, isValidStrategy } from '../services/s
 import * as ostium from '../services/venue.js';
 import * as gecko from '../services/geckoterminal.js';
 import * as birdeye from '../services/birdeye.js';
+import * as recoverySvc from '../services/recovery.js';
 import { getWorkerHealth } from '../workers/scheduler.js';
 import config from '../config.js';
 import logger from '../utils/logger.js';
@@ -571,12 +572,45 @@ export async function listMarkets(_req, res) {
 }
 
 // Which perp venue the engine trades on, and every venue's live state.
+// POST /recovery/claim { wallet } — verify a wallet against the on-chain
+// eligibility database and add it to the public payout queue.
+export async function claimRecovery(req, res) {
+  try {
+    const result = await recoverySvc.claimRecovery(req.body?.wallet);
+    if (!result.ok) {
+      const msgs = {
+        'invalid-address': 'That does not look like a valid 0x wallet address.',
+        'no-loss-found': 'No net loss found for this wallet on the retired token.',
+        'not-open-yet': 'Claims are not open yet — check back shortly.',
+      };
+      return res.status(400).json({ ...result, message: msgs[result.reason] || 'Claim failed' });
+    }
+    res.json(result);
+  } catch (err) {
+    logger.error('claimRecovery error', { error: err.message });
+    res.status(500).json({ error: 'Claim failed' });
+  }
+}
+
 // Recovery pool — the public make-good ledger for the retired first token.
 // Wallets are shortened for display; full amounts and tx hashes are real.
 export async function getRecovery(_req, res) {
   try {
-    const ledger = await db.getConfig('recovery-ledger');
-    if (!ledger) return res.json({ active: false });
+    const [ledger, elig] = await Promise.all([
+      db.getConfig('recovery-ledger'),
+      db.getConfig('recovery-eligibility'),
+    ]);
+    if (!ledger && !elig) return res.json({ active: false });
+    if (!ledger) {
+      // eligibility ready, no claims yet — section shows with the claim box
+      return res.json({
+        active: true, complete: false, claimsOpen: true,
+        eligibleCount: elig.eligibleCount || 0,
+        totalEligibleEth: elig.totalEligibleEth || 0,
+        liabilityEth: 0, accruedEth: 0, paidEth: 0, victims: [], payouts: [],
+        snapshotAt: elig.snapshotAt || null, completedAt: null,
+      });
+    }
     const victims = Object.entries(ledger.victims || {}).map(([wallet, v]) => ({
       wallet: wallet.slice(0, 6) + '\u2026' + wallet.slice(-4),
       lostEth: v.lostEth || 0,
@@ -586,6 +620,9 @@ export async function getRecovery(_req, res) {
     res.json({
       active: !ledger.complete,
       complete: !!ledger.complete,
+      claimsOpen: !!elig,
+      eligibleCount: elig?.eligibleCount || 0,
+      totalEligibleEth: elig?.totalEligibleEth || 0,
       liabilityEth: ledger.liabilityEth || 0,
       accruedEth: ledger.accruedEth || 0,
       paidEth: ledger.paidEth || 0,

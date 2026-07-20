@@ -121,3 +121,39 @@ test('recovery: planPayouts pays largest debts first, never overpays, respects d
   // nothing due -> empty
   assert.deepEqual(planPayouts({ c: victims.c }, 1), []);
 });
+
+test('recovery: claim flow verifies eligibility, is idempotent, re-opens pool', async () => {
+  const db = await import('../db/firebase.js');
+  if (!db._mockMode) return; // only meaningful against the mock store
+  const { claimRecovery } = await import('../services/recovery.js');
+  const W = '0x' + 'a1'.repeat(20);
+
+  // claims not open yet
+  let r = await claimRecovery(W);
+  assert.equal(r.ok, false); assert.equal(r.reason, 'not-open-yet');
+
+  await db.setConfig('recovery-eligibility', { wallets: { [W]: 0.03 }, eligibleCount: 1, totalEligibleEth: 0.03 });
+
+  // invalid address
+  r = await claimRecovery('nonsense');
+  assert.equal(r.reason, 'invalid-address');
+  // eligible wallet -> queued with its real loss
+  r = await claimRecovery(W.toUpperCase().replace('0X', '0x')); // case-insensitive
+  assert.equal(r.ok, true); assert.equal(r.lostEth, 0.03); assert.equal(r.paidEth, 0);
+  // idempotent re-claim
+  r = await claimRecovery(W);
+  assert.equal(r.ok, true); assert.equal(r.lostEth, 0.03);
+  // non-eligible wallet
+  r = await claimRecovery('0x' + 'b2'.repeat(20));
+  assert.equal(r.ok, false); assert.equal(r.reason, 'no-loss-found');
+  // ledger reflects one claim, liability = claimed only
+  const ledger = await db.getConfig('recovery-ledger');
+  assert.equal(Object.keys(ledger.victims).length, 1);
+  assert.equal(ledger.liabilityEth, 0.03);
+  // a completed pool re-opens when a new unpaid claim arrives
+  await db.setConfig('recovery-ledger', { ...ledger, complete: true });
+  await db.setConfig('recovery-eligibility', { wallets: { [W]: 0.03, ['0x' + 'c3'.repeat(20)]: 0.01 }, eligibleCount: 2 });
+  r = await claimRecovery('0x' + 'c3'.repeat(20));
+  assert.equal(r.ok, true);
+  assert.equal((await db.getConfig('recovery-ledger')).complete, false, 'new claim re-opens the pool');
+});

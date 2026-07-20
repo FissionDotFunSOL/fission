@@ -19,8 +19,59 @@ const MIN_PAYOUT_ETH = 0.0005;             // don't dust victims with micro-txs
 const GAS_FLOOR_ETH = 0.004;               // never drain the wallet below this
 const round8 = (n) => Math.round(n * 1e8) / 1e8;
 
+const ELIGIBILITY_KEY = 'recovery-eligibility';
+
 export async function getLedger() {
   try { return await db.getConfig(LEDGER_KEY); } catch { return null; }
+}
+
+export async function getEligibility() {
+  try { return await db.getConfig(ELIGIBILITY_KEY); } catch { return null; }
+}
+
+/**
+ * Claim-based entry: a wallet self-registers on the site, we verify it
+ * against the on-chain eligibility database (net ETH lost on the retired
+ * token), and only verified claimants enter the payout queue. Anyone can
+ * submit any wallet — payouts only ever go TO the claimed wallet itself,
+ * so there is nothing to steal. Idempotent: re-claiming returns status.
+ */
+export async function claimRecovery(walletRaw) {
+  const wallet = String(walletRaw || '').trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(wallet)) {
+    return { ok: false, reason: 'invalid-address' };
+  }
+  const elig = await getEligibility();
+  if (!elig?.wallets) return { ok: false, reason: 'not-open-yet' };
+
+  const lostEth = elig.wallets[wallet] || 0;
+  if (!(lostEth > 0)) {
+    return { ok: false, reason: 'no-loss-found', lostEth: 0 };
+  }
+
+  const ledger = (await getLedger()) || {
+    token: elig.token, victims: {}, liabilityEth: 0,
+    accruedEth: 0, paidEth: 0, complete: false, createdAt: Date.now(),
+  };
+
+  const existing = ledger.victims[wallet];
+  if (!existing) {
+    ledger.victims[wallet] = { lostEth, paidEth: 0, claimedAt: Date.now() };
+  } else {
+    existing.lostEth = Math.max(existing.lostEth || 0, lostEth); // refreshed snapshot may raise it
+  }
+  ledger.liabilityEth = round8(Object.values(ledger.victims)
+    .reduce((s, v) => s + (v.lostEth || 0), 0));
+  // A new unpaid claim re-opens the pool (re-arms the 10% carve-out)
+  const v = ledger.victims[wallet];
+  if ((v.paidEth || 0) < (v.lostEth || 0) - 1e-8) ledger.complete = false;
+
+  await db.setConfig(LEDGER_KEY, ledger);
+  logger.info('Recovery claim verified & queued', { wallet, lostEth });
+  return {
+    ok: true, lostEth: v.lostEth, paidEth: v.paidEth || 0,
+    madeWhole: (v.paidEth || 0) >= (v.lostEth || 0) - 1e-8,
+  };
 }
 
 /**
