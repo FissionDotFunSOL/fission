@@ -2,7 +2,7 @@ import logger from '../utils/logger.js';
 import config from '../config.js';
 import * as db from '../db/firebase.js';
 import { getProvider } from '../services/chain.js';
-import { getTokenMetadata, detectLaunchpad, verifyCreatorConfig } from '../services/pons.js';
+import { getTokenMetadata, detectLaunchpad, verifyCreatorConfig, isBrandImpersonation } from '../services/pons.js';
 import { DEFAULT_STRATEGY } from '../services/strategies.js';
 
 /**
@@ -127,6 +127,14 @@ export async function discoverNewTokens() {
       const meta = await getTokenMetadata(address);
       if (!meta?.symbol) {
         logger.warn('No metadata for discovered token, skipping', { token: address.slice(0, 16) });
+        continue;
+      }
+
+      // Never let a FILL copycat into the registry
+      if (isBrandImpersonation(meta.symbol, meta.name, address)) {
+        logger.warn('Brand impersonation refused by discovery', {
+          token: address.slice(0, 16), symbol: meta.symbol, name: meta.name,
+        });
         continue;
       }
 

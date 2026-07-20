@@ -1,6 +1,6 @@
 import { isAddress, getAddress } from 'ethers';
 import * as db from '../db/firebase.js';
-import { verifyCreatorConfig, getTokenMetadata } from '../services/pons.js';
+import { verifyCreatorConfig, getTokenMetadata, isBrandImpersonation } from '../services/pons.js';
 import { STRATEGY_MODES, DEFAULT_STRATEGY, isValidStrategy } from '../services/strategies.js';
 import * as ostium from '../services/venue.js';
 import * as gecko from '../services/geckoterminal.js';
@@ -193,6 +193,14 @@ export async function registerToken(req, res) {
       if (meta?.image) tokenImage = meta.image;
     } catch (metaErr) {
       logger.warn('Metadata fetch failed', { address: tokenAddress, error: metaErr.message });
+    }
+
+    // Refuse FILL copycats — only the official token carries the brand
+    if (isBrandImpersonation(tokenSymbol, tokenName, tokenAddress)) {
+      return res.status(400).json({
+        error: 'Brand impersonation',
+        reason: 'Tokens presenting as FILL / Fill Protocol cannot register. Only the official $FILL shown on fill.fun is recognized.',
+      });
     }
 
     // ── Store token ──

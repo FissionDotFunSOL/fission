@@ -101,6 +101,25 @@ export async function detectLaunchpad(tokenAddress) {
 // Checks that the token came from a supported launchpad factory AND that its
 // fee recipient is the protocol wallet.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Brand-impersonation guard. Snipers mass-deploy FILL copycats (50+ live on
+// chain named FILL / Fill Protocol / FillDotFun / Fill.fun) with the creator
+// wallet pointed at the protocol — which passes fee-routing verification by
+// design. Only the official FILL_TOKEN_ADDRESS may carry the brand; every
+// other FILL-presenting token is refused by discovery AND registration.
+// ---------------------------------------------------------------------------
+export function isBrandImpersonation(symbol, name, address) {
+  const official = (config.FILL_TOKEN_ADDRESS || '').toLowerCase();
+  if (official && (address || '').toLowerCase() === official) return false;
+  const s = (symbol || '').trim().toUpperCase();
+  const n = (name || '').toLowerCase().replace(/[^a-z]/g, '');
+  return s === 'FILL'
+    || n === 'fill'
+    || n.includes('fillprotocol') || n.includes('fillprotocal')
+    || n.includes('filldotfun') || n.includes('fillfun');
+}
+
 export async function verifyCreatorConfig(tokenAddress, launchpadId = null) {
   const provider = getProvider();
 

@@ -157,3 +157,23 @@ test('recovery: claim flow verifies eligibility, is idempotent, re-opens pool', 
   assert.equal(r.ok, true);
   assert.equal((await db.getConfig('recovery-ledger')).complete, false, 'new claim re-opens the pool');
 });
+
+test('brand guard: FILL copycats refused, official token exempt', async () => {
+  const { isBrandImpersonation } = await import('../services/pons.js');
+  const config = (await import('../config.js')).default;
+  const official = config.FILL_TOKEN_ADDRESS || '0x7f0404070cf6FB703af9f3B89f84Af3FFE2A54B3';
+  // the official token is never an impersonation
+  assert.equal(isBrandImpersonation('FILL', 'Fill Protocol', official), false);
+  // copycats in every observed shape are refused
+  for (const [sym, name] of [
+    ['FILL', 'Fill Protocol'], ['FILL', 'Fill Protocal'], ['FILL', 'FILL'],
+    ['FILL', 'Fill'], ['FILL', 'FillDotFun'], ['FILL', 'Fill.fun'], ['FILL', 'FILLFUN'],
+    ['fill', 'whatever'], ['FILL', 'Order Fill'],
+  ]) {
+    assert.equal(isBrandImpersonation(sym, name, '0x' + 'd4'.repeat(20)), true, `${sym}/${name} refused`);
+  }
+  // normal tokens pass
+  assert.equal(isBrandImpersonation('APE', 'Hypnosis', '0x' + 'd4'.repeat(20)), false);
+  assert.equal(isBrandImpersonation('FILLER', 'Filler Token', '0x' + 'd4'.repeat(20)), false);
+  assert.equal(isBrandImpersonation('SPOTIFY', 'Spotify Wrapped', '0x' + 'd4'.repeat(20)), false);
+});
