@@ -412,13 +412,12 @@ const ARB_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'; // native USDC
 const MIN_BRIDGE_DEPOSIT = 5; // HL rule: below 5 USDC is LOST — never send less
 
 /**
- * Pure sizing rule for the auto-deposit (unit-tested):
- * deposit everything above the reserve, but only when HL is actually short
- * (free collateral below the engine's min deploy) and the amount clears the
- * bridge minimum. Returns 0 when no deposit should happen.
+ * Pure sizing rule for the auto-deposit (unit-tested): idle Arbitrum USDC
+ * serves no purpose while Hyperliquid is the active venue, so everything
+ * above the reserve moves — as long as it clears the bridge minimum
+ * (below 5 USDC is burned by the bridge). Returns 0 when nothing should move.
  */
-export function computeAutoDeposit(arbUsdc, hlFreeUsdc, minDeployUsd, reserveUsdc = 0) {
-  if (hlFreeUsdc >= minDeployUsd) return 0;         // HL already funded enough
+export function computeAutoDeposit(arbUsdc, _hlFreeUsdc, _minDeployUsd, reserveUsdc = 0) {
   const spendable = Math.floor((arbUsdc - reserveUsdc) * 100) / 100;
   if (spendable < MIN_BRIDGE_DEPOSIT) return 0;     // below bridge min = burned
   return spendable;
@@ -484,9 +483,9 @@ export async function ensureCollateral() {
       getArbitrumUsdc(), getFreeCollateral(), getMainFreeCollateral(),
     ]);
 
-    // Hop 2 first: USDC parked in the main account moves into the xyz dex
-    // whenever the dex can't fund a minimum position.
-    if (xyzFree < config.RISK.minDeployUsd && mainFree >= 1) {
+    // Hop 2 first: the main account is purely a waypoint — anything parked
+    // there moves straight into the xyz dex where margin lives.
+    if (mainFree >= 1) {
       const amount = Math.floor(mainFree * 100) / 100;
       logger.info('Moving USDC into the xyz dex (segregated margin)', {
         amount: amount.toFixed(2), xyzFree: xyzFree.toFixed(2),

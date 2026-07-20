@@ -48,11 +48,10 @@ test('venue router resolves an active venue and reports status', async () => {
   assert.ok(active && !active.paused, 'active venue is never a paused venue');
 });
 
-test('computeAutoDeposit: bridge-minimum and reserve rules', async () => {
+test('computeAutoDeposit: idle USDC always moves, bridge-minimum + reserve respected', async () => {
   const { computeAutoDeposit } = hyperliquid;
-  // HL already funded enough -> no deposit
-  assert.equal(computeAutoDeposit(45, 20, 10), 0);
-  // HL short, idle USDC available -> deposit it all
+  // idle USDC moves even when HL already holds funds (it's useless on Arbitrum)
+  assert.equal(computeAutoDeposit(530, 47, 1), 530);
   assert.equal(computeAutoDeposit(45.69, 0, 10), 45.69);
   // below the 5 USDC bridge minimum -> NEVER send (it would be burned)
   assert.equal(computeAutoDeposit(4.99, 0, 10), 0);
