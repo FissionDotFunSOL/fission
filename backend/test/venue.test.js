@@ -47,3 +47,17 @@ test('venue router resolves an active venue and reports status', async () => {
   const active = st.venues.find(v => v.active);
   assert.ok(active && !active.paused, 'active venue is never a paused venue');
 });
+
+test('computeAutoDeposit: bridge-minimum and reserve rules', async () => {
+  const { computeAutoDeposit } = hyperliquid;
+  // HL already funded enough -> no deposit
+  assert.equal(computeAutoDeposit(45, 20, 10), 0);
+  // HL short, idle USDC available -> deposit it all
+  assert.equal(computeAutoDeposit(45.69, 0, 10), 45.69);
+  // below the 5 USDC bridge minimum -> NEVER send (it would be burned)
+  assert.equal(computeAutoDeposit(4.99, 0, 10), 0);
+  assert.equal(computeAutoDeposit(0, 0, 10), 0);
+  // reserve is respected
+  assert.equal(computeAutoDeposit(45, 0, 10, 41), 0);   // leftover 4 < bridge min
+  assert.equal(computeAutoDeposit(45, 0, 10, 20), 25);
+});

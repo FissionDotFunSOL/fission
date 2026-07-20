@@ -310,6 +310,85 @@ export function getAvailableMarkets() {
   return config.STOCK_MARKETS;
 }
 
+// ── Auto-deposit: route idle Arbitrum USDC into Hyperliquid ────────────────
+//
+// Depositing = sending native USDC on Arbitrum to Hyperliquid's Bridge2
+// escrow; the same address is credited on the HL L1 in under a minute.
+// Bridge2 verified three ways before this address was committed: HL docs,
+// the Arbiscan "Hyperliquid: Deposit Bridge 2" label, and on-chain (the
+// escrow holds ~$400M USDC).
+const BRIDGE2 = '0x2Df1c51E09aECF9cacB7bc98cB1742757f163dF7';
+const ARB_USDC = '0xaf88d065e77c8cC2239327C5EDb3A432268e5831'; // native USDC
+const MIN_BRIDGE_DEPOSIT = 5; // HL rule: below 5 USDC is LOST — never send less
+
+/**
+ * Pure sizing rule for the auto-deposit (unit-tested):
+ * deposit everything above the reserve, but only when HL is actually short
+ * (free collateral below the engine's min deploy) and the amount clears the
+ * bridge minimum. Returns 0 when no deposit should happen.
+ */
+export function computeAutoDeposit(arbUsdc, hlFreeUsdc, minDeployUsd, reserveUsdc = 0) {
+  if (hlFreeUsdc >= minDeployUsd) return 0;         // HL already funded enough
+  const spendable = Math.floor((arbUsdc - reserveUsdc) * 100) / 100;
+  if (spendable < MIN_BRIDGE_DEPOSIT) return 0;     // below bridge min = burned
+  return spendable;
+}
+
+export async function getArbitrumUsdc() {
+  const { JsonRpcProvider, Contract, formatUnits } = await import('ethers');
+  const provider = new JsonRpcProvider(config.ARBITRUM_RPC_URL);
+  const usdc = new Contract(ARB_USDC, ['function balanceOf(address) view returns (uint256)'], provider);
+  const bal = await usdc.balanceOf(config.PROTOCOL_ADDRESS);
+  return parseFloat(formatUnits(bal, 6)) || 0;
+}
+
+/**
+ * Called once per position-manager cycle (via the venue router). When
+ * Hyperliquid is the active venue and its account can't fund a minimum
+ * position while USDC sits idle on Arbitrum, move the idle USDC across.
+ * Set AUTO_DEPOSIT=off to disable.
+ */
+export async function ensureCollateral() {
+  try {
+    if ((process.env.AUTO_DEPOSIT || 'on') === 'off') return null;
+    if (!config.protocolWallet) return null;
+
+    const [arbUsdc, hlFree] = await Promise.all([getArbitrumUsdc(), getFreeCollateral()]);
+    const reserve = parseFloat(process.env.ARBITRUM_USDC_RESERVE) || 0;
+    const amount = computeAutoDeposit(arbUsdc, hlFree, config.RISK.minDeployUsd, reserve);
+    if (amount <= 0) return null;
+
+    const { JsonRpcProvider, Contract, parseUnits, formatUnits } = await import('ethers');
+    const provider = new JsonRpcProvider(config.ARBITRUM_RPC_URL);
+    const signer = config.protocolWallet.connect(provider);
+    const usdc = new Contract(ARB_USDC, [
+      'function transfer(address,uint256) returns (bool)',
+      'function balanceOf(address) view returns (uint256)',
+    ], signer);
+
+    // Final sanity: the destination must look like the real escrow
+    // (nine-figure USDC balance) — a guard against any address corruption.
+    const escrow = parseFloat(formatUnits(await usdc.balanceOf(BRIDGE2), 6));
+    if (escrow < 50_000_000) {
+      logger.error('HL bridge sanity check FAILED — refusing to deposit', { escrow });
+      return null;
+    }
+
+    logger.info('Auto-depositing idle Arbitrum USDC to Hyperliquid', {
+      amount: amount.toFixed(2), hlFree: hlFree.toFixed(2), arbUsdc: arbUsdc.toFixed(2),
+    });
+    const tx = await usdc.transfer(BRIDGE2, parseUnits(amount.toFixed(2), 6));
+    const receipt = await tx.wait();
+    logger.info('Hyperliquid deposit sent — credits in under a minute', {
+      amount: amount.toFixed(2), hash: receipt.hash,
+    });
+    return { amount, hash: receipt.hash };
+  } catch (err) {
+    logger.error('HL auto-deposit failed', { error: err.message });
+    return null;
+  }
+}
+
 export async function shutdown() {
   try { await _client?.disconnect?.(); } catch {}
   _client = null;

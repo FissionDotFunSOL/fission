@@ -704,6 +704,18 @@ export async function manageAllPositions() {
   const active = tokens.filter((t) => t.status === 'active');
   if (active.length === 0) return [];
 
+  // Capital routing first: if the active venue can auto-fund itself from
+  // idle collateral (Hyperliquid pulls Arbitrum USDC through its bridge),
+  // do that before evaluating entries so sizing sees the real balance.
+  try {
+    const deposited = await perps.ensureCollateral?.();
+    if (deposited?.amount) {
+      notifier.notify?.(`💰 Auto-deposited ${deposited.amount.toFixed(2)} USDC to the trading venue (${deposited.hash})`);
+    }
+  } catch (fundErr) {
+    logger.warn('ensureCollateral failed — continuing with current balances', { error: fundErr.message });
+  }
+
   const results = [];
 
   // Manage existing positions for all tokens (their pegged stock markets)

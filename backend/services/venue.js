@@ -66,6 +66,13 @@ export const isVenuePaused      = async (...a) => (await active()).isVenuePaused
 export const getMaxLeverage     = (...a) => ostium.getMaxLeverage(...a); // constant, venue-agnostic
 export const getAvailableMarkets = () => config.STOCK_MARKETS;
 
+// Capital routing: venues that support auto-funding (Hyperliquid pulls idle
+// Arbitrum USDC through its bridge) run it; others no-op.
+export const ensureCollateral = async (...a) => {
+  const impl = await active();
+  return impl.ensureCollateral ? impl.ensureCollateral(...a) : null;
+};
+
 export async function shutdown() {
   await Promise.allSettled(Object.values(IMPL).map((v) => v.shutdown?.()));
 }
