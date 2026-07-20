@@ -24,7 +24,10 @@ export function initRecovery() {
     // haven't moved shortly after, jump instantly.
     setTimeout(() => {
       const r = section.getBoundingClientRect();
-      if (r.top > 500 || r.top < -500) window.scrollTo(0, section.offsetTop - 70);
+      if (r.top > 500 || r.top < -500) {
+        // 'instant' bypasses the global scroll-behavior:smooth CSS
+        window.scrollTo({ top: section.offsetTop - 70, behavior: 'instant' });
+      }
     }, 700);
   };
   window.addEventListener('hashchange', () => { if (revealed) maybeScroll(); });
