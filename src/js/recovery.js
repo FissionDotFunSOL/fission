@@ -18,9 +18,14 @@ export function initRecovery() {
   // ourselves once revealed, and on any later #recovery navigation.
   let revealed = false;
   const maybeScroll = () => {
-    if (location.hash === '#recovery') {
-      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    if (location.hash !== '#recovery') return;
+    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Fallback: smooth scrolling is suppressed in background tabs — if we
+    // haven't moved shortly after, jump instantly.
+    setTimeout(() => {
+      const r = section.getBoundingClientRect();
+      if (r.top > 500 || r.top < -500) window.scrollTo(0, section.offsetTop - 70);
+    }, 700);
   };
   window.addEventListener('hashchange', () => { if (revealed) maybeScroll(); });
 
