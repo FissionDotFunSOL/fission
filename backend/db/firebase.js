@@ -257,7 +257,12 @@ export async function addBuyback(data) {
 }
 
 export async function getBuybacksForToken(tokenAddress, limit = 50) {
-  return queryDocs('buybacks', [['tokenAddress', '==', tokenAddress]], 'timestamp', limit);
+  // Query by equality only (no orderBy) so Firestore doesn't require a
+  // composite index — then sort newest-first in memory. Per-token buyback
+  // counts are small, so fetching the matches and sorting is cheap.
+  const rows = await queryDocs('buybacks', [['tokenAddress', '==', tokenAddress]], null, 500);
+  rows.sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
+  return rows.slice(0, limit);
 }
 
 export async function getAllBuybacks(limit = 100) {
