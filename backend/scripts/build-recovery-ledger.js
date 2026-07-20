@@ -83,10 +83,15 @@ const tradeTxs = [...byTx.entries()].filter(([, ts]) =>
   ts.some((t) => t.from === CURVE || t.to === CURVE));
 console.log(`trade txs: ${tradeTxs.length}`);
 
+// No single stuck request may hang the pool: every task races a timeout.
+const withTimeout = (promise, ms) => Promise.race([
+  promise,
+  new Promise((_, rej) => { const t = setTimeout(() => rej(new Error('task-timeout')), ms); t.unref?.(); }),
+]);
 async function mapLimit(items, limit, fn) {
   const arr = [...items]; let i = 0;
   await Promise.all(Array.from({ length: limit }, async () => {
-    while (i < arr.length) { const idx = i++; await fn(arr[idx]).catch(() => {}); }
+    while (i < arr.length) { const idx = i++; await withTimeout(fn(arr[idx]), 45000).catch(() => {}); }
   }));
 }
 let _done = 0;

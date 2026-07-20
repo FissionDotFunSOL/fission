@@ -517,7 +517,7 @@ export async function ensureCollateral() {
     }
 
     logger.info('Auto-depositing idle Arbitrum USDC to Hyperliquid', {
-      amount: amount.toFixed(2), hlFree: hlFree.toFixed(2), arbUsdc: arbUsdc.toFixed(2),
+      amount: amount.toFixed(2), xyzFree: xyzFree.toFixed(2), mainFree: mainFree.toFixed(2), arbUsdc: arbUsdc.toFixed(2),
     });
     const tx = await usdc.transfer(BRIDGE2, parseUnits(amount.toFixed(2), 6));
     const receipt = await tx.wait();
