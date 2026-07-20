@@ -28,9 +28,9 @@ export async function healthCheck(_req, res) {
 export async function listTokens(_req, res) {
   try {
     const all = await db.getAllTokens();
-    // Retired tokens (e.g. relaunched contracts) stay in the DB for history
-    // but never appear publicly
-    const tokens = all.filter((t) => t.status !== 'retired');
+    // Only approved tokens appear publicly — pending (awaiting approval)
+    // and retired (relaunched/abandoned) stay hidden
+    const tokens = all.filter((t) => t.status === 'active');
     res.json({ tokens });
   } catch (err) {
     logger.error('listTokens error', { error: err.message, stack: err.stack });
@@ -218,7 +218,8 @@ export async function registerToken(req, res) {
       leverage: tokenLeverage,
       creatorWallet: verification.creator || config.PROTOCOL_ADDRESS,
       createdAt: Date.now(),
-      status: 'active',
+      // Approval gate — verified but hidden until approved (anti-bait)
+      status: 'pending',
     };
 
     await db.setToken(tokenAddress, tokenData);
@@ -878,6 +879,49 @@ export async function getTokenMarketData(req, res) {
 }
 
 // ---------------------------------------------------------------------------
+// Admin: approve or reject a pending token (anti-bait approval gate)
+export async function moderateToken(req, res) {
+  // Fail closed — same auth as the other admin endpoints
+  const authKey = req.headers['x-admin-key'] || req.query.key;
+  const expectedKey = process.env.ADMIN_API_KEY;
+  if (!expectedKey) {
+    return res.status(403).json({ error: 'Admin endpoint disabled — set ADMIN_API_KEY to enable' });
+  }
+  if (authKey !== expectedKey) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  try {
+    const { address, action } = req.params;
+    if (!isAddress(address)) return res.status(400).json({ error: 'Invalid address' });
+    if (!['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'action must be approve or reject' });
+    }
+    const token = await db.getToken(address.toLowerCase()) || await db.getToken(getAddress(address));
+    if (!token) return res.status(404).json({ error: 'Token not found' });
+    const status = action === 'approve' ? 'active' : 'retired';
+    await db.setToken(token.address || address, {
+      status,
+      moderatedAt: Date.now(),
+      ...(action === 'reject' ? { retiredReason: 'rejected by moderation' } : {}),
+    });
+    logger.info(`Token ${action}d by admin`, { address, symbol: token.symbol });
+    res.json({ ok: true, address, status });
+  } catch (err) {
+    logger.error('moderateToken error', { error: err.message });
+    res.status(500).json({ error: 'Moderation failed' });
+  }
+}
+
+// Admin: list tokens awaiting approval
+export async function listPendingTokens(req, res) {
+  const authKey = req.headers['x-admin-key'] || req.query.key;
+  const expectedKey = process.env.ADMIN_API_KEY;
+  if (!expectedKey) return res.status(403).json({ error: 'Admin endpoint disabled' });
+  if (authKey !== expectedKey) return res.status(401).json({ error: 'Unauthorized' });
+  const all = await db.getAllTokens();
+  res.json({ pending: all.filter((t) => t.status === 'pending') });
+}
+
 // Admin: manually trigger a worker cycle
 // ---------------------------------------------------------------------------
 export async function triggerWorker(req, res) {

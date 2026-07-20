@@ -153,11 +153,14 @@ export async function discoverNewTokens() {
         strategy: DEFAULT_STRATEGY,
         leverage: config.RISK.leverage,
         createdAt: Date.now(),
-        status: 'active',
+        // Approval gate: discovered tokens are NOT listed or traded until
+        // approved — prevents bait tokens (fees pointed at the protocol
+        // purely to appear on the dashboard) from ever showing publicly.
+        status: 'pending',
         autoDiscovered: true,
       });
       registered++;
-      logger.info('Auto-registered new token', {
+      logger.info('Discovered token pending approval', {
         token: address.slice(0, 16), symbol: meta.symbol, name: meta.name, underlying,
       });
     } catch (e) {

@@ -60,5 +60,7 @@ router.get('/status',             ctrl.getSystemStatus);
 
 // Admin: manually trigger a worker cycle (for testing)
 router.post('/admin/trigger/:worker', ctrl.triggerWorker);
+router.get('/admin/tokens/pending',          ctrl.listPendingTokens);
+router.post('/admin/tokens/:address/:action', ctrl.moderateToken);
 
 export default router;
