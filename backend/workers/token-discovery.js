@@ -82,6 +82,10 @@ export async function discoverNewTokens() {
   const skip = new Set([
     config.WETH_ADDRESS.toLowerCase(),
     (config.FILL_TOKEN_ADDRESS || '').toLowerCase(),
+    // Dead/abandoned tokens that must never re-register (e.g. a token whose
+    // fee events still reference the wallet after being retired)
+    ...(process.env.DISCOVERY_IGNORE_TOKENS || '')
+      .split(',').map(a => a.trim().toLowerCase()).filter(Boolean),
   ]);
 
   // Chain-wide scan: wallet as indexed topic in any of the 3 positions

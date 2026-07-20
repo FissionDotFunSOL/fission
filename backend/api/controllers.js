@@ -26,7 +26,10 @@ export async function healthCheck(_req, res) {
 // ---------------------------------------------------------------------------
 export async function listTokens(_req, res) {
   try {
-    const tokens = await db.getAllTokens();
+    const all = await db.getAllTokens();
+    // Retired tokens (e.g. relaunched contracts) stay in the DB for history
+    // but never appear publicly
+    const tokens = all.filter((t) => t.status !== 'retired');
     res.json({ tokens });
   } catch (err) {
     logger.error('listTokens error', { error: err.message, stack: err.stack });
