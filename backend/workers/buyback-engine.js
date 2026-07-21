@@ -75,19 +75,23 @@ export async function buybackFill(tokenAddress) {
     // Swap ETH → FILL via Uniswap
     const swapResult = await swapEthForToken(config.FILL_TOKEN_ADDRESS, availableEth);
 
-    // Burn the FILL tokens received
+    // Bought FILL: burn or hold as treasury, per BURN_MODE
     let burnHash = null;
     let tokensBurned = 0;
 
-    try {
-      const balance = await getTokenBalance(config.PROTOCOL_ADDRESS, config.FILL_TOKEN_ADDRESS);
-      if (balance > 0) {
-        burnHash = await burnTokens(config.FILL_TOKEN_ADDRESS, balance);
-        tokensBurned = balance;
-        logger.info('FILL tokens burned', { tokensBurned: balance, burnHash });
+    if (config.BURN_MODE === 'burn') {
+      try {
+        const balance = await getTokenBalance(config.PROTOCOL_ADDRESS, config.FILL_TOKEN_ADDRESS);
+        if (balance > 0) {
+          burnHash = await burnTokens(config.FILL_TOKEN_ADDRESS, balance);
+          tokensBurned = balance;
+          logger.info('FILL tokens burned', { tokensBurned: balance, burnHash });
+        }
+      } catch (burnErr) {
+        logger.error('FILL burn step failed (swap succeeded)', { error: burnErr.message });
       }
-    } catch (burnErr) {
-      logger.error('FILL burn step failed (swap succeeded)', { error: burnErr.message });
+    } else {
+      logger.info('FILL buyback held as treasury (BURN_MODE=hold)');
     }
 
     // Record buyback
@@ -169,19 +173,23 @@ export async function buybackSourceToken(tokenAddress) {
     // Swap ETH → source token via Uniswap
     const swapResult = await swapEthForToken(tokenAddress, availableEth);
 
-    // Burn the tokens received
+    // Bought source tokens: burn or hold as treasury, per BURN_MODE
     let burnHash = null;
     let tokensBurned = 0;
 
-    try {
-      const balance = await getTokenBalance(config.PROTOCOL_ADDRESS, tokenAddress);
-      if (balance > 0) {
-        burnHash = await burnTokens(tokenAddress, balance);
-        tokensBurned = balance;
-        logger.info('Source tokens burned', { token: tokenAddress, tokensBurned: balance, burnHash });
+    if (config.BURN_MODE === 'burn') {
+      try {
+        const balance = await getTokenBalance(config.PROTOCOL_ADDRESS, tokenAddress);
+        if (balance > 0) {
+          burnHash = await burnTokens(tokenAddress, balance);
+          tokensBurned = balance;
+          logger.info('Source tokens burned', { token: tokenAddress, tokensBurned: balance, burnHash });
+        }
+      } catch (burnErr) {
+        logger.error('Source token burn step failed (swap succeeded)', { token: tokenAddress, error: burnErr.message });
       }
-    } catch (burnErr) {
-      logger.error('Source token burn step failed (swap succeeded)', { token: tokenAddress, error: burnErr.message });
+    } else {
+      logger.info('Source-token buyback held as treasury (BURN_MODE=hold)', { token: tokenAddress });
     }
 
     // Record buyback
@@ -231,6 +239,8 @@ export async function buybackSourceToken(tokenAddress) {
  * registry token gets burned and recorded. Retired tokens are left alone.
  */
 async function sweepUnburnedTokens() {
+  // In hold mode, bought tokens ARE the treasury — never sweep-burn them.
+  if (config.BURN_MODE !== 'burn') return 0;
   const targets = new Set();
   if (config.FILL_TOKEN_ADDRESS) targets.add(config.FILL_TOKEN_ADDRESS);
   const tokens = await getAllTokens();

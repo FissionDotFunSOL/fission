@@ -258,7 +258,7 @@
         <a href="#how-it-works">How It Works</a>
         <a href="#fee-engine">Fee Engine</a>
         <a href="#perpetual-strategy">Perpetual Strategy</a>
-        <a href="#buyback-burn">Buyback and Burn</a>
+        <a href="#buyback-burn">Buybacks</a>
         <a href="#supported-markets">Supported Markets</a>
       </div>
       <div class="docs-sidebar-section">
@@ -292,10 +292,10 @@
       <!-- ===== OVERVIEW ===== -->
       <h2 id="overview">Overview</h2>
       <p>
-        Fill Protocol is an autonomous on-chain system that transforms idle creator fees from Pons launchpad tokens into leveraged stock perpetual positions on Ostium (Arbitrum). Profits generated from these positions are used to buy back and burn the creator's token, creating sustained deflationary pressure without requiring any action from the token creator or holders.
+        Fill Protocol is an autonomous on-chain system that transforms idle creator fees from Pons launchpad tokens into leveraged stock perpetual positions on Ostium (Arbitrum). Profits generated from these positions are used to buy back the creator's token on the open market, creating sustained pressure without requiring any action from the token creator or holders.
       </p>
       <div class="docs-callout">
-        <strong>Key Principle:</strong> Creator fees flow in. Leveraged yield flows out. Tokens get bought back and burned. Fully automated. Fully on-chain.
+        <strong>Key Principle:</strong> Creator fees flow in. Leveraged yield flows out. Tokens get bought back on the open market. Fully automated. Fully on-chain.
       </div>
 
       <!-- ===== HOW IT WORKS ===== -->
@@ -304,7 +304,7 @@
       <ol>
         <li><strong>Fee Collection</strong> — When a creator deploys a token on Pons (Creator wallet field) or LaunchHood (Reward recipient field) pointed at the Fill protocol wallet, all creator fees from that token are automatically routed to Fill.</li>
         <li><strong>Perpetual Deployment</strong> — Collected fees are deployed into leveraged stock perpetual positions on Ostium — a permissionless RWA perp DEX on Arbitrum — based on the creator's chosen stock, direction, and leverage level.</li>
-        <li><strong>Buyback and Burn</strong> — When positions are profitable, gains are harvested, used to buy the creator's token on the open market, and the purchased tokens are permanently burned by sending them to a dead address.</li>
+        <li><strong>Buybacks</strong> — When positions are profitable, gains are harvested, used to buy the creator's token on the open market, and the purchased tokens are permanently burned by sending them to a dead address.</li>
       </ol>
 
       <!-- ===== FEE ENGINE ===== -->
@@ -315,7 +315,7 @@
       <h3>Fee Distribution</h3>
       <ul>
         <li><strong>70%</strong> — Deployed into stock perp positions as collateral (profits flow to token buyback + burn)</li>
-        <li><strong>30%</strong> — Direct FILL buyback and burn</li>
+        <li><strong>30%</strong> — Direct FILL buyback</li>
       </ul>
 
       <!-- ===== PERPETUAL STRATEGY ===== -->
@@ -343,7 +343,7 @@
       </div>
 
       <!-- ===== BUYBACK BURN ===== -->
-      <h2 id="buyback-burn">Buyback and Burn</h2>
+      <h2 id="buyback-burn">Buybacks</h2>
       <p>
         When a perpetual position generates profit, the protocol automatically executes a buyback cycle:
       </p>

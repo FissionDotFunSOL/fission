@@ -87,6 +87,10 @@ const PONS = {
   LAUNCH_FEE_ETH: LAUNCHPADS.pons.launchFeeEth,
 };
 
+// What happens to bought-back tokens: 'burn' sends them to the dead
+// address; 'hold' keeps them in the protocol wallet as treasury.
+const BURN_MODE = (process.env.BURN_MODE || 'hold').toLowerCase() === 'burn' ? 'burn' : 'hold';
+
 // FILL protocol token (launched on Pons) — 30% of ALL creator fees buy this back
 const FILL_TOKEN_ADDRESS = process.env.FILL_TOKEN_ADDRESS || '';
 
@@ -246,6 +250,7 @@ const config = {
   STOCK_MARKETS,
   EXTRA_MARKETS,
   DEFAULT_MARKET,
+  BURN_MODE,
   ALL_PERPS_MARKETS,
   PORT,
   NODE_ENV,
