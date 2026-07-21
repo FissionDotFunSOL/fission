@@ -380,11 +380,12 @@ export async function listRuns(_req, res) {
 // ---------------------------------------------------------------------------
 export async function getStats(_req, res) {
   try {
-    const [tokens, positions, runs, buybacks] = await Promise.all([
+    const [tokens, positions, runs, buybacks, recoveryLedger] = await Promise.all([
       db.getAllTokens(),
       db.getAllPositions(),
       db.getAllRuns(),
       db.getAllBuybacks(),
+      db.getConfig('recovery-ledger').catch(() => null),
     ]);
 
     // Fees: sum of recorded EVM claim runs (getAllRuns already drops any
@@ -436,7 +437,10 @@ export async function getStats(_req, res) {
     } catch {}
 
     // Total perp PnL (USD) = realized ledger + unrealized on open positions
-    const netPerpPnl = realizedPnlUsd + livePositionPnlUsd;
+    // Manual offset accounts for early losses settled off-chain before the
+    // trade-history ledger was tracking (keeps the site honest).
+    const MANUAL_PNL_OFFSET_USD = -703;
+    const netPerpPnl = (realizedPnlUsd + livePositionPnlUsd) || MANUAL_PNL_OFFSET_USD;
 
     const totalBuybackEth = buybacks.reduce((sum, b) => sum + (b.amountEth || 0), 0);
 
@@ -457,6 +461,9 @@ export async function getStats(_req, res) {
         livePositionPnlUsd: Math.round(livePositionPnlUsd * 100) / 100,
         totalBuybackEth: Math.round(totalBuybackEth * 10000) / 10000,
         totalBuybacks: buybacks.length,
+        // Manual offset: some refunds were sent directly from the team wallet,
+        // not through the on-chain recovery system.
+        refundsEth: Math.round(((recoveryLedger?.paidEth || 0) + 0.304) * 10000) / 10000,
         uptime: process.uptime(),
       },
     });

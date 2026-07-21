@@ -70,6 +70,7 @@ async function fetchStats() {
         { key: 'walletBalance',  value: s.walletBalanceEth || 0, decimals: 4 },
         { key: 'buybackEth',     value: s.totalBuybackEth || 0, decimals: 4 },
         { key: 'buybacks',       value: s.totalBuybacks || 0, decimals: 0 },
+        { key: 'refunds',        value: s.refundsEth || 0, decimals: 4 },
       ];
     }
 
