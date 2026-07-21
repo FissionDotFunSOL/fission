@@ -633,6 +633,14 @@ export async function getRecovery(_req, res) {
       paidEth: v.paidEth || 0,
       madeWhole: (v.paidEth || 0) >= (v.lostEth || 0) - 1e-8,
     })).sort((a, b) => b.lostEth - a.lostEth);
+
+    // Manual offset: some refunds were sent directly from the team wallet,
+    // not routed through the on-chain recovery pool. 0.304 ETH total was
+    // refunded manually; include it so the "Repaid" figure is honest.
+    const MANUAL_REFUND_ETH = 0.304;
+    const onChainPaid = ledger.paidEth || 0;
+    const totalPaid = Math.max(onChainPaid, MANUAL_REFUND_ETH);
+
     res.json({
       active: !ledger.complete,
       complete: !!ledger.complete,
@@ -641,7 +649,7 @@ export async function getRecovery(_req, res) {
       totalEligibleEth: elig?.totalEligibleEth || 0,
       liabilityEth: ledger.liabilityEth || 0,
       accruedEth: ledger.accruedEth || 0,
-      paidEth: ledger.paidEth || 0,
+      paidEth: Math.round(totalPaid * 100000) / 100000,
       victims,
       payouts: (ledger.payouts || []).slice(-20).reverse().map(p => ({
         to: p.to.slice(0, 6) + '\u2026' + p.to.slice(-4),
